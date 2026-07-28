@@ -11928,6 +11928,24 @@ abstract class FluxerLocalizations {
   /// **'Uses the OS notification center. For per-channel/per-community controls, right-click a community icon and open notification settings.'**
   String get notificationsEnableDesktopNotificationsDescription;
 
+  /// Toggle label for keeping a background connection alive to receive notifications without Firebase or UnifiedPush.
+  ///
+  /// In en, this message translates to:
+  /// **'Background connection'**
+  String get notificationsBackgroundConnectionLabel;
+
+  /// Description for the background connection notifications toggle.
+  ///
+  /// In en, this message translates to:
+  /// **'Keeps {productName} connected in the background so you still get notifications without Firebase or a UnifiedPush distributor app. Uses more battery; Android may ask to exempt {productName} from battery optimization.'**
+  String notificationsBackgroundConnectionDescription(String productName);
+
+  /// Toast shown when the user enables background connection but declines the battery-optimization exemption.
+  ///
+  /// In en, this message translates to:
+  /// **'Background connection enabled, but Android may still stop it under battery optimization since the exemption wasn\'t granted.'**
+  String get notificationsBackgroundConnectionBatteryExemptionDenied;
+
   /// Toggle label for enabling browser notifications.
   ///
   /// In en, this message translates to:

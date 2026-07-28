@@ -7077,6 +7077,18 @@ class FluxerLocalizationsPl extends FluxerLocalizations {
       'Uses the OS notification center. For per-channel/per-community controls, right-click a community icon and open notification settings.';
 
   @override
+  String get notificationsBackgroundConnectionLabel => 'Background connection';
+
+  @override
+  String notificationsBackgroundConnectionDescription(String productName) {
+    return 'Keeps $productName connected in the background so you still get notifications without Firebase or a UnifiedPush distributor app. Uses more battery; Android may ask to exempt $productName from battery optimization.';
+  }
+
+  @override
+  String get notificationsBackgroundConnectionBatteryExemptionDenied =>
+      'Background connection enabled, but Android may still stop it under battery optimization since the exemption wasn\'t granted.';
+
+  @override
   String get notificationsEnableBrowserNotificationsLabel =>
       'Enable browser notifications';
 

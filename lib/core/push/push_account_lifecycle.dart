@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxer_app/core/badge/app_icon_badge_service.dart';
 import 'package:fluxer_app/core/build/push_provider_guard.dart';
+import 'package:fluxer_app/core/gateway/background/background_gateway_service.dart';
+import 'package:fluxer_app/core/gateway/background/background_gateway_session_snapshot.dart';
 import 'package:fluxer_app/core/push/apns/apns_mobile_device_registration.dart';
 import 'package:fluxer_app/core/push/fcm/fcm_mobile_device_registration.dart';
 import 'package:fluxer_app/core/push/pending_push_notification_path_provider.dart';
@@ -26,6 +28,8 @@ final class PushAccountLifecycle {
     ref.read(pendingPushNotificationPathProvider.notifier).clear();
     await AppIconBadgeService.clear();
     await PushNotificationClear.clearAllDelivered();
+    await BackgroundGatewayService.instance.stop();
+    await clearBackgroundGatewaySessionSnapshot();
     if (PushProviderGuard.isApple) {
       await ref
           .read(apnsMobileDeviceRegistrationProvider.notifier)

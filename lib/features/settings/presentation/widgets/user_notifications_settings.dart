@@ -6,6 +6,7 @@ import 'package:fluxer_app/core/theme/fluxer_theme_extension.dart';
 import 'package:fluxer_app/features/profile/providers/user_settings_status_provider.dart';
 import 'package:fluxer_app/features/settings/presentation/widgets/user_notifications_permission_banner.dart';
 import 'package:fluxer_app/features/settings/presentation/widgets/user_notifications_sound_settings_section.dart';
+import 'package:fluxer_app/features/settings/providers/background_gateway_preference_provider.dart';
 import 'package:fluxer_app/features/settings/providers/mention_preference_provider.dart';
 import 'package:fluxer_app/features/settings/providers/notification_preferences_provider.dart';
 import 'package:fluxer_app/features/settings/providers/user_settings_sync_service.dart';
@@ -31,6 +32,9 @@ class UserNotificationsSettings extends ConsumerWidget {
     final notificationPrefs = ref.watch(notificationPreferencesProvider);
     final notificationNotifier = ref.read(
       notificationPreferencesProvider.notifier,
+    );
+    final bool backgroundGatewayEnabled = ref.watch(
+      backgroundGatewayPreferenceProvider,
     );
     final mentionPreferenceAsync = ref.watch(mentionReplyPreferenceProvider);
     final mentionPreference =
@@ -85,6 +89,21 @@ class UserNotificationsSettings extends ConsumerWidget {
                   ),
                 ),
               ),
+              if (isBackgroundGatewaySupportedPlatform)
+                FluxerSettingsSwitchItem(
+                  label: l10n.notificationsBackgroundConnectionLabel,
+                  description: l10n.notificationsBackgroundConnectionDescription(
+                    'Fluxer',
+                  ),
+                  value: backgroundGatewayEnabled,
+                  onChanged: (bool value) => unawaited(
+                    _handleBackgroundGatewayEnabledChanged(
+                      ref: ref,
+                      l10n: l10n,
+                      value: value,
+                    ),
+                  ),
+                ),
               if (isDesktopOs) ...[
                 Text(
                   l10n.notificationsPushInactiveTimeoutLabel,
@@ -171,6 +190,22 @@ class UserNotificationsSettings extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+Future<void> _handleBackgroundGatewayEnabledChanged({
+  required WidgetRef ref,
+  required FluxerLocalizations l10n,
+  required bool value,
+}) async {
+  final bool batteryExemptionGranted = await ref
+      .read(backgroundGatewayPreferenceProvider.notifier)
+      .setEnabled(value: value);
+  if (value && !batteryExemptionGranted) {
+    _showSyncFailedToast(
+      ref,
+      l10n.notificationsBackgroundConnectionBatteryExemptionDenied,
     );
   }
 }

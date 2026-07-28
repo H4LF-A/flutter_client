@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxer_app/app.dart';
 import 'package:fluxer_app/core/bootstrap/display_refresh_rate_config.dart';
@@ -93,6 +94,12 @@ Future<void> _bootstrapFluxer(List<String> args) async {
     'app.bootstrap.image_picker',
     _configureImagePicker,
   );
+  if (!kIsWeb && Platform.isAndroid) {
+    FluxerObservability.instance.traceSync(
+      'app.bootstrap.background_gateway_communication_port',
+      FlutterForegroundTask.initCommunicationPort,
+    );
+  }
   final bool isUnifiedPushBackground =
       args.contains('--unifiedpush-bg') &&
       Platform.isAndroid &&

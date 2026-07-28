@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:fluxer_app/core/api/fluxer_client_provider.dart';
 import 'package:fluxer_app/core/build/push_provider_guard.dart';
 import 'package:fluxer_app/core/deep_links/deep_link_handler.dart';
+import 'package:fluxer_app/core/gateway/background/background_gateway_foreground_state_sync_provider.dart';
+import 'package:fluxer_app/core/gateway/background/background_gateway_snapshot_sync_provider.dart';
 import 'package:fluxer_app/core/instance/instance_config_snapshot.dart';
 import 'package:fluxer_app/core/premium/current_user_entitlements_provider.dart';
 import 'package:fluxer_app/core/premium/premium_state_sync_provider.dart';
@@ -36,6 +38,7 @@ import 'package:fluxer_app/features/mature_content/providers/mature_content_agre
 import 'package:fluxer_app/features/mature_content/providers/sensitive_content_provider.dart';
 import 'package:fluxer_app/features/profile/providers/status_expiry_scheduler.dart';
 import 'package:fluxer_app/features/settings/providers/appearance_preferences_provider.dart';
+import 'package:fluxer_app/features/settings/providers/background_gateway_preference_provider.dart';
 import 'package:fluxer_app/features/settings/providers/chat_preferences_provider.dart';
 import 'package:fluxer_app/features/settings/providers/voice_settings_provider.dart';
 import 'package:fluxer_app/features/shell/providers/current_user_private_provider.dart';
@@ -160,6 +163,9 @@ class AppStartup extends _$AppStartup {
       ..read(gatewayEventListenerProvider)
       ..read(gatewayStateListenerProvider)
       ..read(gatewayForegroundListenerProvider)
+      ..read(backgroundGatewaySnapshotSyncProvider)
+      ..read(backgroundGatewayPreferenceProvider)
+      ..read(backgroundGatewayForegroundStateSyncProvider)
       ..read(gatewayReconnectToastListenerProvider)
       ..read(connectivityListenerProvider)
       ..read(gatewayEphemeralStateRecoveryListenerProvider)

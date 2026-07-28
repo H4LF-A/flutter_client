@@ -8944,6 +8944,24 @@
   "@notificationsEnableDesktopNotificationsDescription": {
     "description": "Description for the enable desktop notifications toggle."
   },
+  "notificationsBackgroundConnectionLabel": "Background connection",
+  "@notificationsBackgroundConnectionLabel": {
+    "description": "Toggle label for keeping a background connection alive to receive notifications without Firebase or UnifiedPush."
+  },
+  "notificationsBackgroundConnectionDescription": "Keeps {productName} connected in the background so you still get notifications without Firebase or a UnifiedPush distributor app. Uses more battery; Android may ask to exempt {productName} from battery optimization.",
+  "@notificationsBackgroundConnectionDescription": {
+    "description": "Description for the background connection notifications toggle.",
+    "placeholders": {
+      "productName": {
+        "type": "String",
+        "example": "Fluxer"
+      }
+    }
+  },
+  "notificationsBackgroundConnectionBatteryExemptionDenied": "Background connection enabled, but Android may still stop it under battery optimization since the exemption wasn't granted.",
+  "@notificationsBackgroundConnectionBatteryExemptionDenied": {
+    "description": "Toast shown when the user enables background connection but declines the battery-optimization exemption."
+  },
   "notificationsEnableBrowserNotificationsLabel": "Enable browser notifications",
   "@notificationsEnableBrowserNotificationsLabel": {
     "description": "Toggle label for enabling browser notifications."
