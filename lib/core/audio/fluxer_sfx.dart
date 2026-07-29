@@ -2,10 +2,16 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:fluxer_app/core/audio/enums/fluxer_sfx_clip.dart';
 
 const double _kDefaultSfxVolume = 0.4;
+// Chat message dings must NOT use notificationRingtone: Android's default
+// audio policy applies automatic ducking of concurrent media for the
+// telephony-ringtone usage regardless of the AndroidAudioFocus.none setting
+// here, since that ducking is attribute-based, not focus-based. Use the
+// usage type audioplayers documents specifically for "instant communication
+// such as a chat, or SMS" instead, which isn't configured to duck media.
 final AudioContext _kNotificationSfxContext = AudioContext(
   android: const AudioContextAndroid(
     contentType: AndroidContentType.sonification,
-    usageType: AndroidUsageType.notificationRingtone,
+    usageType: AndroidUsageType.notificationCommunicationInstant,
     audioFocus: AndroidAudioFocus.none,
   ),
   iOS: AudioContextIOS(category: AVAudioSessionCategory.ambient),
