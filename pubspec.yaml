@@ -104,6 +104,12 @@ dependency_overrides:
   # pinned: mockito >=5.6.5 needs analyzer ^13, incompatible with the analyzer 10 override above;
   # it is an unused transitive dep of riverpod_generator, but build_runner still compiles its builder.
   mockito: 5.6.4
+  # Vendored fork of flutter_webrtc 1.5.2: forces Android hardware AEC/NS off
+  # unconditionally (see vendor/flutter_webrtc/android/.../MethodCallHandlerImpl.java)
+  # so the app's noise-suppression tier setting actually controls WebRTC's
+  # software APM instead of being silently overridden by hardware processing.
+  flutter_webrtc:
+    path: vendor/flutter_webrtc
 
 dev_dependencies:
   accessibility_radar: ^0.3.0

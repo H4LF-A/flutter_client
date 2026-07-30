@@ -22,6 +22,7 @@ import 'package:fluxer_app/core/push/fcm/fcm_entrypoint.dart';
 import 'package:fluxer_app/core/push/services/unified_push_service.dart';
 import 'package:image_picker_android/image_picker_android.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
+import 'package:livekit_client/livekit_client.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -77,6 +78,21 @@ Future<void> _bootstrapFluxer(List<String> args) async {
     FluxerObservability.instance.traceSync(
       'app.bootstrap.media_kit',
       MediaKit.ensureInitialized,
+    );
+  }
+
+  if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+    // Without this, WebRTC initializes lazily with raw platform defaults
+    // instead of declaring a proper two-way voice-communication audio
+    // session (AudioAttributes usage/content type on Android, AVAudioSession
+    // category/mode on iOS) - unlike apps that explicitly configure this,
+    // which can affect platform audio routing decisions such as which
+    // built-in microphone gets used.
+    await FluxerObservability.instance.traceAsync(
+      'app.bootstrap.livekit_audio_session',
+      () => LiveKitClient.initialize(
+        initialAudioSessionOptions: const AudioSessionOptions.communication(),
+      ),
     );
   }
 
