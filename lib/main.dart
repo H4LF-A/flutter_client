@@ -88,10 +88,26 @@ Future<void> _bootstrapFluxer(List<String> args) async {
     // category/mode on iOS) - unlike apps that explicitly configure this,
     // which can affect platform audio routing decisions such as which
     // built-in microphone gets used.
+    //
+    // Deliberately using a custom Android config here instead of the plain
+    // AndroidAudioSessionConfiguration.communication preset: that preset also
+    // sets audioMode: inCommunication, which flips the global AudioManager
+    // mode to MODE_IN_COMMUNICATION. That appears to make Android attach its
+    // own OS/OEM-level voice-processing chain outside WebRTC entirely, which
+    // ignores the app's noise-suppression tier and processes audio
+    // unconditionally. Keeping only usageType/contentType (the audio
+    // attributes actually attached to the record session) is the minimal
+    // change needed to test whether mic routing still gets fixed without
+    // also flipping the global mode.
     await FluxerObservability.instance.traceAsync(
       'app.bootstrap.livekit_audio_session',
       () => LiveKitClient.initialize(
-        initialAudioSessionOptions: const AudioSessionOptions.communication(),
+        initialAudioSessionOptions: const AudioSessionOptions.communication(
+          android: AndroidAudioSessionConfiguration(
+            usageType: AndroidAudioAttributesUsageType.voiceCommunication,
+            contentType: AndroidAudioAttributesContentType.speech,
+          ),
+        ),
       ),
     );
   }
