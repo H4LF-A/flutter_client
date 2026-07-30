@@ -171,6 +171,15 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
         renderer.srcObject = event.streams.first;
       }
     };
+    // Both sides must trickle their gathered ICE candidates to each other -
+    // without this neither peer connection ever forms a usable candidate
+    // pair, so no media flows even though signaling completes normally.
+    localPeerConnection.onIceCandidate = (RTCIceCandidate candidate) {
+      unawaited(remotePeerConnection.addCandidate(candidate));
+    };
+    remotePeerConnection.onIceCandidate = (RTCIceCandidate candidate) {
+      unawaited(localPeerConnection.addCandidate(candidate));
+    };
     await localPeerConnection.addTrack(
       track.mediaStreamTrack,
       track.mediaStream,
