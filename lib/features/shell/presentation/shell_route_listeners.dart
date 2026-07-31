@@ -4,11 +4,8 @@ import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxer_app/core/badge/app_icon_badge_coordinator.dart';
-import 'package:fluxer_app/core/build/push_provider_guard.dart';
 import 'package:fluxer_app/core/permissions/guild_channel_permission_cleanup.dart';
 import 'package:fluxer_app/core/push/push_notifications_coordinator.dart';
-import 'package:fluxer_app/core/push/unified_push/unified_push_distributor_setup.dart';
-import 'package:fluxer_app/core/push/unified_push/unified_push_distributor_ui.dart';
 import 'package:fluxer_app/core/router/fluxer_router.dart';
 import 'package:fluxer_app/core/router/route_state_providers.dart';
 import 'package:fluxer_app/core/share/pending_share_provider.dart';
@@ -70,14 +67,18 @@ class _ShellRouteListenersState extends ConsumerState<ShellRouteListeners> {
           return;
         }
         _scheduleInactiveChannelCleanup(previous);
-      });
-
-    if (PushProviderGuard.isUnifiedPush) {
-      ref.listenManual<bool>(unifiedPushDistributorSetupProvider, (
-        bool? previous,
-        bool next,
+      })
+      ..listenManual<SharedMediaPayload?>(pendingShareProvider, (
+        SharedMediaPayload? previous,
+        SharedMediaPayload? next,
       ) {
-        if (!next) {
+        if (next == null) {
+          return;
+        }
+        final List<XFile> files = next.toXFiles();
+        final String? initialMessage = next.initialMessage;
+        if (files.isEmpty &&
+            (initialMessage == null || initialMessage.isEmpty)) {
           return;
         }
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -88,42 +89,16 @@ class _ShellRouteListenersState extends ConsumerState<ShellRouteListeners> {
           if (rootContext == null || !rootContext.mounted) {
             return;
           }
-          ref.read(unifiedPushDistributorSetupProvider.notifier).clearRequest();
-          unawaited(showUnifiedPushDistributorSetup(rootContext));
+          ref.read(pendingShareProvider.notifier).clear();
+          unawaited(
+            showShareMediaSheet(
+              rootContext,
+              files: files,
+              initialMessage: initialMessage,
+            ),
+          );
         });
       });
-    }
-
-    ref.listenManual<SharedMediaPayload?>(pendingShareProvider, (
-      SharedMediaPayload? previous,
-      SharedMediaPayload? next,
-    ) {
-      if (next == null) {
-        return;
-      }
-      final List<XFile> files = next.toXFiles();
-      final String? initialMessage = next.initialMessage;
-      if (files.isEmpty && (initialMessage == null || initialMessage.isEmpty)) {
-        return;
-      }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) {
-          return;
-        }
-        final BuildContext? rootContext = rootNavigatorKey.currentContext;
-        if (rootContext == null || !rootContext.mounted) {
-          return;
-        }
-        ref.read(pendingShareProvider.notifier).clear();
-        unawaited(
-          showShareMediaSheet(
-            rootContext,
-            files: files,
-            initialMessage: initialMessage,
-          ),
-        );
-      });
-    });
   }
 
   void _scheduleActiveGuildEffects({

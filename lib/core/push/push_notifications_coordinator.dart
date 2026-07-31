@@ -21,7 +21,6 @@ import 'package:fluxer_app/core/push/push_notification_tap_handler.dart';
 import 'package:fluxer_app/core/push/push_service.dart';
 import 'package:fluxer_app/core/push/services/firebase_messaging_push_service.dart';
 import 'package:fluxer_app/core/push/services/unified_push_service.dart';
-import 'package:fluxer_app/core/push/unified_push/unified_push_distributor_setup.dart';
 import 'package:fluxer_app/core/push/unified_push/unified_push_mobile_device_registration.dart';
 import 'package:fluxer_app/core/router/fluxer_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -175,7 +174,9 @@ class PushNotificationsCoordinator extends _$PushNotificationsCoordinator {
     await pushService.initializeWithOptions(vapid: vapid);
     await pushService.applyVapidAndReregisterIfNeeded(vapid);
     if (pushService.needsDistributorPicker) {
-      ref.read(unifiedPushDistributorSetupProvider.notifier).requestPicker();
+      // Don't force the "install a push distributor" dialog on the user at
+      // startup - background push just stays unavailable until a distributor
+      // happens to be installed and re-registration is retried naturally.
     } else {
       final bool hasPersisted = await ref
           .read(unifiedPushMobileDeviceRegistrationProvider.notifier)
