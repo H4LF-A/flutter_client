@@ -37,6 +37,11 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
   RTCPeerConnection? _loopbackRemotePeerConnection;
   double _level = 0;
   bool _isRunning = false;
+  // TEMPORARY diagnostic: surfaces LiveKit's live audio-processing state
+  // (requested vs. resolved vs. actually-active, per component) directly in
+  // this screen so it can be read off-device without a log-export flow.
+  // Remove once the Android noise-suppression-tier investigation is done.
+  AudioProcessingState? _processingState;
 
   static const Map<String, dynamic> _loopbackConfiguration = <String, dynamic>{
     'iceServers': <Map<String, dynamic>>[],
@@ -101,6 +106,10 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
         });
       await visualizer.start();
       await _startPlayback(track, settings);
+      final AudioProcessingState? processingState = await AudioManager
+          .instance
+          .getAudioProcessingState();
+      talker.info('Mic test audio processing state', processingState);
       if (!mounted) {
         await _disposePlayback();
         await _visualizerListener?.dispose();
@@ -113,6 +122,7 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
         _track = track;
         _visualizer = visualizer;
         _isRunning = true;
+        _processingState = processingState;
       });
     } on Object catch (error, stackTrace) {
       talker.error('Failed to start mic test', error, stackTrace);
@@ -233,6 +243,7 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
       setState(() {
         _isRunning = false;
         _level = 0;
+        _processingState = null;
       });
     }
   }
@@ -286,7 +297,35 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
               ? () => unawaited(_stopTest())
               : () => unawaited(_startTest()),
         ),
+        if (_processingState != null) ...[
+          SizedBox(height: layout.s3),
+          Text(
+            _formatProcessingState(_processingState!),
+            style: context.textStyles.bodySmall.copyWith(
+              color: colors.textSecondary,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ],
       ],
     );
+  }
+
+  // TEMPORARY diagnostic formatter, see _processingState above.
+  String _formatProcessingState(AudioProcessingState state) {
+    String component(String label, AudioProcessingComponentState c) {
+      return '$label: effective=${c.effective.value} '
+          'requested=${c.requested?.enabled}/${c.requested?.mode.constraintValue} '
+          'sw(resolved=${c.isSoftwareResolved},active=${c.isSoftwareActive}) '
+          'plat(avail=${c.isPlatformAvailable},resolved=${c.isPlatformResolved},active=${c.isPlatformActive})';
+    }
+
+    return <String>[
+      'hasAPM=${state.hasAudioProcessingModule}',
+      component('EC', state.echoCancellation),
+      component('NS', state.noiseSuppression),
+      component('AGC', state.autoGainControl),
+      component('HPF', state.highPassFilter),
+    ].join('\n');
   }
 }
