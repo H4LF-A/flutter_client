@@ -1973,6 +1973,11 @@ class VoiceSession extends _$VoiceSession {
         settings: next,
         microphoneEnabled: micEnabled,
       );
+    } else if (previous == null || previous.inputVolume != next.inputVolume) {
+      // Volume is a runtime gain on the already-published track, not part of
+      // AudioCaptureOptions - no need for the full republish refreshMicrophone
+      // does for tier/device/EC changes above.
+      await applicator.applyInputVolume(room: room, settings: next);
     }
     if (cameraChanged) {
       final VoiceState? vs = _selfConnectionVoiceState();
@@ -2157,13 +2162,25 @@ class VoiceSession extends _$VoiceSession {
       await lp.setMicrophoneEnabled(false);
       return;
     }
+    final VoiceSettingsApplicator applicator = ref.read(
+      voiceSettingsApplicatorProvider,
+    );
+    final VoiceSettingsState settings = ref.read(voiceSettingsProvider);
     Object? lastError;
     for (int i = 0; i <= _kMicPublishRetryDelays.length; i++) {
       if (attempt != null && !_isLatestRoomAttempt(attempt)) {
         return;
       }
       try {
-        await lp.setMicrophoneEnabled(true);
+        // Without audioCaptureOptions here, this falls back to LiveKit's
+        // hardcoded defaults (NS/EC/AGC all on) regardless of whatever the
+        // user chose before joining - their settings would only take effect
+        // once something changed *after* joining and refreshMicrophone ran.
+        await lp.setMicrophoneEnabled(
+          true,
+          audioCaptureOptions: applicator.buildAudioCaptureOptions(settings),
+        );
+        await applicator.applyInputVolume(room: room, settings: settings);
         if (state.errorMessage == kVoiceSessionErrorMicPublish) {
           state = state.copyWith(clearError: true);
         }

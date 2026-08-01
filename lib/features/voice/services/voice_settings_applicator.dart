@@ -1,9 +1,11 @@
+import 'package:flutter_webrtc/flutter_webrtc.dart' show Helper;
 import 'package:fluxer_app/features/voice/domain/voice_settings_state.dart';
 import 'package:fluxer_app/features/voice/providers/voice_noise_filter_provider.dart';
 import 'package:fluxer_app/features/voice/utils/camera_resolution_presets.dart';
 import 'package:fluxer_app/features/voice/utils/screen_share_presets.dart';
 import 'package:fluxer_app/features/voice/utils/voice_camera_platform.dart';
 import 'package:fluxer_app/features/voice/utils/voice_processing_profile.dart';
+import 'package:fluxer_app/features/voice/utils/voice_volume_utils.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:livekit_noise_filter/livekit_noise_filter.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -109,6 +111,33 @@ class VoiceSettingsApplicator {
     await participant.setMicrophoneEnabled(
       true,
       audioCaptureOptions: buildAudioCaptureOptions(settings),
+    );
+    await applyInputVolume(room: room, settings: settings);
+  }
+
+  /// Applies the input-volume gain to the currently published microphone
+  /// track. Volume isn't part of AudioCaptureOptions/MediaConstraints - it's
+  /// a runtime gain applied directly to the track - so it has to be
+  /// re-applied here on every mic (re)publish, not just once at creation.
+  Future<void> applyInputVolume({
+    required Room room,
+    required VoiceSettingsState settings,
+  }) async {
+    final LocalParticipant? participant = room.localParticipant;
+    if (participant == null) {
+      return;
+    }
+    final LocalTrackPublication? publication = participant
+        .getTrackPublicationBySource(TrackSource.microphone);
+    final LocalAudioTrack? track = publication?.track is LocalAudioTrack
+        ? publication!.track! as LocalAudioTrack
+        : null;
+    if (track == null) {
+      return;
+    }
+    await Helper.setVolume(
+      inputVoiceVolumePercentToGain(settings.inputVolume),
+      track.mediaStreamTrack,
     );
   }
 

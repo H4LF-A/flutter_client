@@ -83,7 +83,14 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
       await applicator.noiseFilter!.setBypass(processing.bypassNoiseFilter);
     }
     try {
-      await applicator.applySpeakerOutput(settings: settings);
+      // Force speaker output for the test regardless of the user's regular
+      // call preference (which defaults to earpiece/off): the whole point of
+      // this test is to hear yourself while looking at the screen, not
+      // holding the phone up like a call - on earpiece the playback is quiet
+      // enough to seem like nothing is happening at all.
+      if (AudioManager.instance.canSwitchSpeakerphone) {
+        await AudioManager.instance.setSpeakerOutputPreferred(true);
+      }
       await _configureOutputDevice(settings.outputDeviceId);
       final LocalAudioTrack track = await LocalAudioTrack.create(options);
       await track.start();
@@ -239,6 +246,12 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
     await _disposePlayback();
     await _track?.stop();
     _track = null;
+    if (AudioManager.instance.canSwitchSpeakerphone) {
+      final VoiceSettingsState settings = ref.read(voiceSettingsProvider);
+      await AudioManager.instance.setSpeakerOutputPreferred(
+        settings.preferSpeakerOutput,
+      );
+    }
     if (mounted) {
       setState(() {
         _isRunning = false;
