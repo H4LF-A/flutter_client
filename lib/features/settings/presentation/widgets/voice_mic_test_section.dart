@@ -42,6 +42,11 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
   // this screen so it can be read off-device without a log-export flow.
   // Remove once the Android noise-suppression-tier investigation is done.
   AudioProcessingState? _processingState;
+  // TEMPORARY diagnostic: shows the gain actually sent to Helper.setVolume
+  // and re-applies it live while the test runs and the volume slider moves,
+  // to isolate whether the underlying native volume mechanism has any
+  // audible effect at all, independent of live-call complexity.
+  double? _appliedGain;
 
   static const Map<String, dynamic> _loopbackConfiguration = <String, dynamic>{
     'iceServers': <Map<String, dynamic>>[],
@@ -94,10 +99,9 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
       await _configureOutputDevice(settings.outputDeviceId);
       final LocalAudioTrack track = await LocalAudioTrack.create(options);
       await track.start();
-      await Helper.setVolume(
-        inputVoiceVolumePercentToGain(settings.inputVolume),
-        track.mediaStreamTrack,
-      );
+      final double gain = inputVoiceVolumePercentToGain(settings.inputVolume);
+      await Helper.setVolume(gain, track.mediaStreamTrack);
+      talker.info('Mic test: applied initial gain=$gain');
       final AudioVisualizer visualizer = createVisualizer(
         track,
         options: const AudioVisualizerOptions(barCount: 8),
@@ -130,6 +134,7 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
         _visualizer = visualizer;
         _isRunning = true;
         _processingState = processingState;
+        _appliedGain = gain;
       });
     } on Object catch (error, stackTrace) {
       talker.error('Failed to start mic test', error, stackTrace);
@@ -257,6 +262,25 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
         _isRunning = false;
         _level = 0;
         _processingState = null;
+        _appliedGain = null;
+      });
+    }
+  }
+
+  // TEMPORARY diagnostic: reapplies gain live as the input-volume slider
+  // moves while the test is running, isolating whether Helper.setVolume has
+  // any audible effect at all, independent of live-call complexity.
+  Future<void> _reapplyGainForRunningTest(int inputVolume) async {
+    final LocalAudioTrack? track = _track;
+    if (track == null) {
+      return;
+    }
+    final double gain = inputVoiceVolumePercentToGain(inputVolume);
+    talker.info('Mic test: reapplying gain=$gain (input volume changed)');
+    await Helper.setVolume(gain, track.mediaStreamTrack);
+    if (mounted) {
+      setState(() {
+        _appliedGain = gain;
       });
     }
   }
@@ -285,6 +309,17 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
         (VoiceSessionState state) => state.isConnected,
       ),
     );
+    // TEMPORARY diagnostic: reapply gain live as the slider moves while the
+    // test is running, instead of only once at test start.
+    ref.listen<int>(
+      voiceSettingsProvider.select((VoiceSettingsState s) => s.inputVolume),
+      (int? previous, int next) {
+        if (previous == next || !_isRunning) {
+          return;
+        }
+        unawaited(_reapplyGainForRunningTest(next));
+      },
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -310,6 +345,16 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
               ? () => unawaited(_stopTest())
               : () => unawaited(_startTest()),
         ),
+        if (_appliedGain != null) ...[
+          SizedBox(height: layout.s3),
+          Text(
+            'appliedGain=$_appliedGain',
+            style: context.textStyles.bodySmall.copyWith(
+              color: colors.textSecondary,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ],
         if (_processingState != null) ...[
           SizedBox(height: layout.s3),
           Text(

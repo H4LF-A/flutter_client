@@ -1,4 +1,5 @@
 import 'package:flutter_webrtc/flutter_webrtc.dart' show Helper;
+import 'package:fluxer_app/core/talker.dart';
 import 'package:fluxer_app/features/voice/domain/voice_settings_state.dart';
 import 'package:fluxer_app/features/voice/providers/voice_noise_filter_provider.dart';
 import 'package:fluxer_app/features/voice/utils/camera_resolution_presets.dart';
@@ -125,6 +126,7 @@ class VoiceSettingsApplicator {
   }) async {
     final LocalParticipant? participant = room.localParticipant;
     if (participant == null) {
+      talker.info('[Voice] applyInputVolume: no local participant');
       return;
     }
     final LocalTrackPublication? publication = participant
@@ -133,10 +135,19 @@ class VoiceSettingsApplicator {
         ? publication!.track! as LocalAudioTrack
         : null;
     if (track == null) {
+      talker.info(
+        '[Voice] applyInputVolume: no local mic track '
+        '(publication=${publication != null}, track=${publication?.track?.runtimeType})',
+      );
       return;
     }
+    final double gain = inputVoiceVolumePercentToGain(settings.inputVolume);
+    talker.info(
+      '[Voice] applyInputVolume: applying gain=$gain '
+      'inputVolume=${settings.inputVolume} trackId=${track.mediaStreamTrack.id}',
+    );
     await Helper.setVolume(
-      inputVoiceVolumePercentToGain(settings.inputVolume),
+      gain,
       track.mediaStreamTrack,
     );
   }
