@@ -274,6 +274,31 @@ class AudioManager {
     await Native.selectAndroidOutputDevice(deviceId);
   }
 
+  /// Sets a software gain multiplier applied to the local microphone signal
+  /// after capture. org.webrtc.AudioTrack.setVolume() (used for remote/output
+  /// track volume elsewhere in this app) has no effect on Android for a
+  /// locally *captured* track - only playout tracks - so input-volume
+  /// control goes through flutter_webrtc's capture-time audio processing
+  /// hook instead, where a real gain multiply happens on the raw PCM before
+  /// encode. [gain] is linear (1.0 = unity, 0.0 = silence). Android only;
+  /// no-op elsewhere.
+  Future<void> setAndroidInputGain(double gain) async {
+    if (!lkPlatformIs(PlatformType.android)) {
+      return;
+    }
+    await Native.setAndroidInputGain(gain);
+  }
+
+  /// Diagnostic: the sample rate/channel/band-framing values WebRTC's native
+  /// capture audio processing chain is actually using on this device. Null
+  /// before any audio has been captured, or on non-Android platforms.
+  Future<Map<String, dynamic>?> getAndroidAudioProcessingFormat() async {
+    if (!lkPlatformIs(PlatformType.android)) {
+      return null;
+    }
+    return Native.getAndroidAudioProcessingFormat();
+  }
+
   Future<void> _applyCurrentAudioSessionPolicy() async {
     if (lkPlatformIs(PlatformType.iOS)) {
       await _configureAppleAudioSession(_options);

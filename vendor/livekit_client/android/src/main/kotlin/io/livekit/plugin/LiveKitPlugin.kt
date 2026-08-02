@@ -51,6 +51,8 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
   private var audioSwitchManager: LKAudioSwitchManager? = null
   private var audioDeviceModuleExecutor: ExecutorService? = null
   private val mainHandler = Handler(Looper.getMainLooper())
+  private val gainProcessor = GainAudioProcessor()
+  private var gainProcessorRegistered = false
 
   /// The MethodChannel that will the communication between Flutter and native Android
   ///
@@ -68,6 +70,19 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
     audioSwitchManager = LKAudioSwitchManager(flutterPluginBinding.applicationContext)
     audioDeviceModuleExecutor?.shutdown()
     audioDeviceModuleExecutor = Executors.newSingleThreadExecutor()
+  }
+
+  // The PeerConnectionFactory (and its AudioProcessingController) is created
+  // lazily on first getUserMedia, not at plugin-attach time, so this is
+  // called on-demand from every entry point that might run before or after
+  // that - it's idempotent and cheap to call repeatedly.
+  private fun ensureGainProcessorRegistered() {
+    if (gainProcessorRegistered) {
+      return
+    }
+    val controller = flutterWebRTCPlugin.getAudioProcessingController() ?: return
+    controller.capturePostProcessing.addProcessor(gainProcessor)
+    gainProcessorRegistered = true
   }
 
   @SuppressLint("SuspiciousIndentation")
@@ -445,7 +460,26 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
         val configuration = call.arguments as? Map<String, Any?> ?: emptyMap()
         audioSwitchManager?.configure(configuration)
         audioSwitchManager?.start()
+        ensureGainProcessorRegistered()
         result.success(null)
+      }
+
+      "setAndroidInputGain" -> {
+        ensureGainProcessorRegistered()
+        val gain = call.argument<Double>("gain") ?: 1.0
+        gainProcessor.setGain(gain)
+        result.success(null)
+      }
+
+      "getAudioProcessingFormat" -> {
+        result.success(
+          mapOf(
+            "sampleRateHz" to gainProcessor.lastSampleRateHz,
+            "numChannels" to gainProcessor.lastNumChannels,
+            "numBands" to gainProcessor.lastNumBands,
+            "numFrames" to gainProcessor.lastNumFrames,
+          ),
+        )
       }
 
       "stopAndroidAudioSession" -> {

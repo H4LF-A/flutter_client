@@ -253,6 +253,37 @@ class Native {
     }
   }
 
+  /// Sets the software input-gain multiplier applied to the local microphone
+  /// signal via flutter_webrtc's capture-time audio processing hook. Android
+  /// only. [gain] is linear (1.0 = unity, 0.0 = silence).
+  @internal
+  static Future<void> setAndroidInputGain(double gain) async {
+    try {
+      await channel.invokeMethod<void>(
+        'setAndroidInputGain',
+        <String, dynamic>{'gain': gain},
+      );
+    } catch (error) {
+      logger.warning('setAndroidInputGain did throw $error');
+    }
+  }
+
+  /// Diagnostic: the sample rate/channel/band-framing values WebRTC's native
+  /// capture audio processing chain is actually using. Null until at least
+  /// one frame has been captured through it.
+  @internal
+  static Future<Map<String, dynamic>?> getAndroidAudioProcessingFormat() async {
+    try {
+      final response = await channel.invokeMethod<dynamic>('getAudioProcessingFormat');
+      if (response is Map) {
+        return response.map((key, value) => MapEntry(key.toString(), value));
+      }
+    } catch (error) {
+      logger.warning('getAudioProcessingFormat did throw $error');
+    }
+    return null;
+  }
+
   /// Enable or disable LiveKit's automatic iOS audio-session management from
   /// native WebRTC audio-engine lifecycle callbacks.
   @internal

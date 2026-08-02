@@ -52,6 +52,10 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
   // TEMPORARY diagnostic: Krisp's own reported error code when "enhanced" is
   // active, see the authenticate() comment in _startTest.
   ErrorCode? _krispError;
+  // TEMPORARY diagnostic: the sample rate/channel/band-framing WebRTC's
+  // native capture audio processing hook actually uses on this device -
+  // needed to scope a real DeepFilterNet noise-suppression port for Android.
+  Map<String, dynamic>? _audioProcessingFormat;
 
   static const Map<String, dynamic> _loopbackConfiguration = <String, dynamic>{
     'iceServers': <Map<String, dynamic>>[],
@@ -125,6 +129,7 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
       await track.start();
       final double gain = inputVoiceVolumePercentToGain(settings.inputVolume);
       await Helper.setVolume(gain, track.mediaStreamTrack);
+      await AudioManager.instance.setAndroidInputGain(gain);
       talker.info('Mic test: applied initial gain=$gain');
       final AudioVisualizer visualizer = createVisualizer(
         track,
@@ -145,6 +150,13 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
           .instance
           .getAudioProcessingState();
       talker.info('Mic test audio processing state', processingState);
+      // TEMPORARY diagnostic: at least one frame has now gone through the
+      // capture audio processing hook (the gain call above forces the
+      // processor to be registered), so the format it observed is available.
+      final Map<String, dynamic>? audioProcessingFormat = await AudioManager
+          .instance
+          .getAndroidAudioProcessingFormat();
+      talker.info('Mic test audio processing format', audioProcessingFormat);
       if (!mounted) {
         await _disposePlayback();
         await _visualizerListener?.dispose();
@@ -160,6 +172,7 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
         _processingState = processingState;
         _appliedGain = gain;
         _krispError = krispError;
+        _audioProcessingFormat = audioProcessingFormat;
       });
     } on Object catch (error, stackTrace) {
       talker.error('Failed to start mic test', error, stackTrace);
@@ -300,6 +313,7 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
         _processingState = null;
         _appliedGain = null;
         _krispError = null;
+        _audioProcessingFormat = null;
       });
     }
   }
@@ -315,6 +329,7 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
     final double gain = inputVoiceVolumePercentToGain(inputVolume);
     talker.info('Mic test: reapplying gain=$gain (input volume changed)');
     await Helper.setVolume(gain, track.mediaStreamTrack);
+    await AudioManager.instance.setAndroidInputGain(gain);
     if (mounted) {
       setState(() {
         _appliedGain = gain;
@@ -406,6 +421,16 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
           SizedBox(height: layout.s3),
           Text(
             'krispLastError=$_krispError',
+            style: context.textStyles.bodySmall.copyWith(
+              color: colors.textSecondary,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ],
+        if (_audioProcessingFormat != null) ...[
+          SizedBox(height: layout.s3),
+          Text(
+            'audioProcessingFormat=$_audioProcessingFormat',
             style: context.textStyles.bodySmall.copyWith(
               color: colors.textSecondary,
               fontFamily: 'monospace',

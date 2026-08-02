@@ -146,10 +146,16 @@ class VoiceSettingsApplicator {
       '[Voice] applyInputVolume: applying gain=$gain '
       'inputVolume=${settings.inputVolume} trackId=${track.mediaStreamTrack.id}',
     );
+    // Helper.setVolume only affects remote/playout tracks on Android, not the
+    // local capture track it's called on here - it's a harmless no-op on
+    // Android and is kept for the platforms where it does apply. The actual
+    // Android fix is a software gain in flutter_webrtc's capture-time audio
+    // processing hook.
     await Helper.setVolume(
       gain,
       track.mediaStreamTrack,
     );
+    await AudioManager.instance.setAndroidInputGain(gain);
   }
 
   Future<void> refreshCamera({
