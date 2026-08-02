@@ -153,14 +153,13 @@ class _UserAudioAndVideoState extends ConsumerState<UserAudioAndVideo> {
                     settingsNotifier.setPreferSpeakerOutput(value: value),
                   ),
                 ),
-              if (devices.audioOutputs.length > 1)
-                FluxerSelect<String>(
-                  label: l10n.audioAndVideoOutputDeviceLabel,
-                  value: settings.outputDeviceId,
-                  items: _deviceItems(l10n, devices.audioOutputs),
-                  onChanged: (String value) =>
-                      unawaited(settingsNotifier.setOutputDeviceId(value)),
-                ),
+              FluxerSelect<String>(
+                label: l10n.audioAndVideoOutputDeviceLabel,
+                value: settings.outputDeviceId,
+                items: _deviceItems(l10n, devices.audioOutputs),
+                onChanged: (String value) =>
+                    unawaited(settingsNotifier.setOutputDeviceId(value)),
+              ),
               FluxerSettingsSubsection(
                 title: l10n.audioAndVideoInputVolumeLabel,
                 children: [

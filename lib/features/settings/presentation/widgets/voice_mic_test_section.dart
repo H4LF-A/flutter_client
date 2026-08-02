@@ -20,6 +20,7 @@ import 'package:fluxer_app/features/voice/utils/voice_processing_profile.dart';
 import 'package:fluxer_app/features/voice/utils/voice_volume_utils.dart';
 import 'package:fluxer_app/l10n/generated/fluxer_localizations.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:livekit_noise_filter/livekit_noise_filter.dart';
 
 class VoiceMicTestSection extends ConsumerStatefulWidget {
   const VoiceMicTestSection({super.key});
@@ -48,6 +49,9 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
   // to isolate whether the underlying native volume mechanism has any
   // audible effect at all, independent of live-call complexity.
   double? _appliedGain;
+  // TEMPORARY diagnostic: Krisp's own reported error code when "enhanced" is
+  // active, see the authenticate() comment in _startTest.
+  ErrorCode? _krispError;
 
   static const Map<String, dynamic> _loopbackConfiguration = <String, dynamic>{
     'iceServers': <Map<String, dynamic>>[],
@@ -85,8 +89,20 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
       settings: settings,
       noiseFilterSupported: applicator.noiseFilterSupported,
     );
+    ErrorCode? krispError;
     if (applicator.noiseFilter != null) {
       await applicator.noiseFilter!.setBypass(processing.bypassNoiseFilter);
+      // TEMPORARY diagnostic: Krisp (the "enhanced" ML filter) requires
+      // authenticating against LiveKit's own backend for license validation
+      // (see LiveKitNoiseFilter.onPublish -> krisp.authenticate). Krisp noise
+      // cancellation is normally a LiveKit Cloud feature - on a self-hosted
+      // server that authentication likely fails, and the SDK probably just
+      // passes audio through unprocessed as a fail-safe rather than erroring
+      // loudly, which would look exactly like "enhanced does nothing".
+      if (!processing.bypassNoiseFilter) {
+        krispError = await applicator.noiseFilter!.lastError();
+        talker.info('Mic test: Krisp lastError=$krispError');
+      }
     }
     try {
       // Force speaker output for the test regardless of the user's regular
@@ -136,6 +152,7 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
         _isRunning = true;
         _processingState = processingState;
         _appliedGain = gain;
+        _krispError = krispError;
       });
     } on Object catch (error, stackTrace) {
       talker.error('Failed to start mic test', error, stackTrace);
@@ -275,6 +292,7 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
         _level = 0;
         _processingState = null;
         _appliedGain = null;
+        _krispError = null;
       });
     }
   }
@@ -371,6 +389,16 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
           SizedBox(height: layout.s3),
           Text(
             _formatProcessingState(_processingState!),
+            style: context.textStyles.bodySmall.copyWith(
+              color: colors.textSecondary,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ],
+        if (_krispError != null) ...[
+          SizedBox(height: layout.s3),
+          Text(
+            'krispLastError=$_krispError',
             style: context.textStyles.bodySmall.copyWith(
               color: colors.textSecondary,
               fontFamily: 'monospace',
