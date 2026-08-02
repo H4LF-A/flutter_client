@@ -90,15 +90,29 @@ Future<void> _bootstrapFluxer(List<String> args) async {
     // built-in microphone gets used.
     //
     // Deliberately using a custom Android config here instead of the plain
-    // AndroidAudioSessionConfiguration.communication preset: that preset also
-    // sets audioMode: inCommunication, which flips the global AudioManager
-    // mode to MODE_IN_COMMUNICATION. That appears to make Android attach its
-    // own OS/OEM-level voice-processing chain outside WebRTC entirely, which
-    // ignores the app's noise-suppression tier and processes audio
-    // unconditionally. Keeping only usageType/contentType (the audio
-    // attributes actually attached to the record session) is the minimal
-    // change needed to test whether mic routing still gets fixed without
-    // also flipping the global mode.
+    // AndroidAudioSessionConfiguration.communication preset. Two things
+    // going on:
+    //
+    // - usageType/contentType (the AudioAttributes actually attached to the
+    //   record session) appear to be what fixes microphone routing.
+    // - audioMode is forced to 'normal' rather than left unset. Leaving it
+    //   unset does NOT mean "don't touch the mode": livekit_client's own
+    //   native audio session manager (LKAudioSwitchManager, which explicitly
+    //   disables flutter_webrtc's competing AudioSwitchManager on init and
+    //   takes over the platform audio session itself) hardcodes
+    //   MODE_IN_COMMUNICATION as its own default and (re-)applies it every
+    //   time the mic publishes, independent of anything passed here unless
+    //   explicitly overridden. MODE_IN_COMMUNICATION appears to make Android
+    //   attach its own OS/OEM-level voice-processing chain outside WebRTC
+    //   entirely, which ignores the app's noise-suppression tier and
+    //   processes audio unconditionally - explicitly forcing 'normal' is the
+    //   only way to actually keep the global AudioManager mode out of that
+    //   state.
+    //
+    // Trade-off: flutter_webrtc's (now-disabled) AudioSwitchManager notes
+    // some devices need MODE_IN_COMMUNICATION/MODE_IN_CALL for Bluetooth
+    // mic/headset routing to work at all, so this may need revisiting if
+    // Bluetooth audio breaks.
     await FluxerObservability.instance.traceAsync(
       'app.bootstrap.livekit_audio_session',
       () => LiveKitClient.initialize(
@@ -106,6 +120,7 @@ Future<void> _bootstrapFluxer(List<String> args) async {
           android: AndroidAudioSessionConfiguration(
             usageType: AndroidAudioAttributesUsageType.voiceCommunication,
             contentType: AndroidAudioAttributesContentType.speech,
+            audioMode: AndroidAudioMode.normal,
           ),
         ),
       ),
