@@ -1339,10 +1339,9 @@ packages:
   livekit_client:
     dependency: "direct main"
     description:
-      name: livekit_client
-      sha256: a840817f6ba4fd11bce1da02ee80098ad5c556c0a95ec61ab03fb355b8b714ab
-      url: "https://pub.dev"
-    source: hosted
+      path: "vendor/livekit_client"
+      relative: true
+    source: path
     version: "2.9.0-dev.0"
   livekit_noise_filter:
     dependency: "direct main"

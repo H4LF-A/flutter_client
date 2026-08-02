@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -148,10 +149,21 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
   }
 
   Future<void> _configureOutputDevice(String outputDeviceId) async {
-    if (kIsWeb || AudioManager.instance.canSwitchSpeakerphone) {
+    if (outputDeviceId == kDefaultVoiceDeviceId || outputDeviceId.isEmpty) {
       return;
     }
-    if (outputDeviceId == kDefaultVoiceDeviceId || outputDeviceId.isEmpty) {
+    // Helper.selectAudioOutput routes through flutter_webrtc's own
+    // AudioSwitchManager, which this app disables in favor of LiveKit's own -
+    // it's a silent no-op on Android, so use LiveKit's own selection there.
+    if (!kIsWeb && Platform.isAndroid) {
+      try {
+        await AudioManager.instance.selectAndroidOutputDevice(outputDeviceId);
+      } on Object catch (error, stackTrace) {
+        talker.warning('Failed to set mic test output device', error, stackTrace);
+      }
+      return;
+    }
+    if (kIsWeb || AudioManager.instance.canSwitchSpeakerphone) {
       return;
     }
     try {

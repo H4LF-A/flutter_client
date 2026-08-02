@@ -110,6 +110,13 @@ dependency_overrides:
   # software APM instead of being silently overridden by hardware processing.
   flutter_webrtc:
     path: vendor/flutter_webrtc
+  # Vendored fork of livekit_client 2.9.0-dev.0: adds real output-device
+  # enumeration/selection (see vendor/livekit_client/android/.../LKAudioSwitchManager.kt)
+  # through LiveKit's own active Android audio session manager, since
+  # flutter_webrtc's own output-device handling is inert - this plugin
+  # disables flutter_webrtc's competing AudioSwitchManager on init.
+  livekit_client:
+    path: vendor/livekit_client
 
 dev_dependencies:
   accessibility_radar: ^0.3.0

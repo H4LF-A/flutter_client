@@ -65,6 +65,14 @@ VoiceMediaDeviceOption _mapDevice(MediaDevice device) {
   );
 }
 
+VoiceMediaDeviceOption _mapAndroidOutputDevice(Map<String, dynamic> device) {
+  return VoiceMediaDeviceOption(
+    deviceId: (device['deviceId'] as String?) ?? '',
+    label: (device['label'] as String?) ?? '',
+    kind: 'audiooutput',
+  );
+}
+
 @Riverpod(keepAlive: true)
 class VoiceMediaDevices extends _$VoiceMediaDevices {
   @override
@@ -81,10 +89,20 @@ class VoiceMediaDevices extends _$VoiceMediaDevices {
           .where((MediaDevice device) => device.kind == 'audioinput')
           .map(_mapDevice)
           .toList();
-      final List<VoiceMediaDeviceOption> audioOutputs = devices
-          .where((MediaDevice device) => device.kind == 'audiooutput')
-          .map(_mapDevice)
-          .toList();
+      // On Android, flutter_webrtc's own output-device enumeration always
+      // returns empty (this app disables flutter_webrtc's competing
+      // AudioSwitchManager in favor of LiveKit's own) - ask LiveKit's audio
+      // manager directly instead, which reflects the manager actually in
+      // control of routing. A no-op, empty-returning call on other platforms.
+      final List<Map<String, dynamic>> androidOutputDevices =
+          await AudioManager.instance.getAndroidOutputDevices();
+      final List<VoiceMediaDeviceOption> audioOutputs =
+          androidOutputDevices.isNotEmpty
+          ? androidOutputDevices.map(_mapAndroidOutputDevice).toList()
+          : devices
+                .where((MediaDevice device) => device.kind == 'audiooutput')
+                .map(_mapDevice)
+                .toList();
       final List<VoiceMediaDeviceOption> videoInputs = devices
           .where((MediaDevice device) => device.kind == 'videoinput')
           .map(_mapDevice)

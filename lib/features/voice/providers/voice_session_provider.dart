@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fluxer_app/core/api/fluxer_client_provider.dart';
@@ -1928,7 +1929,14 @@ class VoiceSession extends _$VoiceSession {
       return;
     }
     try {
-      await Helper.selectAudioOutput(outputDeviceId);
+      // Helper.selectAudioOutput routes through flutter_webrtc's own
+      // AudioSwitchManager, which this app disables in favor of LiveKit's
+      // own (see VoiceMediaDevices.refresh) - it's a silent no-op on Android.
+      if (!kIsWeb && Platform.isAndroid) {
+        await AudioManager.instance.selectAndroidOutputDevice(outputDeviceId);
+      } else {
+        await Helper.selectAudioOutput(outputDeviceId);
+      }
     } on Object {
       return;
     }
