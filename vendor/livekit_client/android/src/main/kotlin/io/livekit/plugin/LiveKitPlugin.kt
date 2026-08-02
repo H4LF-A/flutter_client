@@ -468,9 +468,9 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
           manager.getAvailableOutputDevices { devices ->
             val list = devices.map { device ->
               mapOf(
-                "label" to device.name,
-                "deviceId" to outputDeviceTypeName(device),
-                "groupId" to outputDeviceTypeName(device),
+                "label" to device.label,
+                "deviceId" to device.typeName,
+                "groupId" to device.typeName,
                 "kind" to "audiooutput",
               )
             }

@@ -105,6 +105,13 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
       }
     }
     try {
+      // The mic test deliberately runs outside a Room connection (see the
+      // isConnected guard above), so the audio session never gets activated
+      // via the normal room-connect path - without this, creating a raw
+      // LocalAudioTrack lets the platform ADM's own low-level setup run
+      // unopposed, which on Android can leave AudioManager in
+      // MODE_IN_COMMUNICATION instead of this app's configured policy.
+      await AudioManager.instance.applyOptionsForConnect();
       // Force speaker output for the test regardless of the user's regular
       // call preference (which defaults to earpiece/off): the whole point of
       // this test is to hear yourself while looking at the screen, not

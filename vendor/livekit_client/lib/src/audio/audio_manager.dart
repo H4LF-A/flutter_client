@@ -282,7 +282,14 @@ class AudioManager {
     }
   }
 
-  @internal
+  /// Activates the platform audio session (mode, focus, routing) using the
+  /// currently configured policy. Normally called internally as part of
+  /// room-connect, but also needed by any caller that creates a raw
+  /// LocalAudioTrack outside of a Room (e.g. a standalone mic test): without
+  /// an active session, the platform ADM's own low-level audio setup runs
+  /// unopposed - on Android this can leave AudioManager in
+  /// MODE_IN_COMMUNICATION rather than whatever policy this app configured,
+  /// since nothing here ever asserted a different mode.
   Future<void> applyOptionsForConnect() async {
     await _syncAppleAudioSessionManagementMode();
     if (_isAutomaticConfigurationEnabled) {

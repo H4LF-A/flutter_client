@@ -163,22 +163,27 @@ internal class LKAudioSwitchManager(private val context: Context) {
 
   /**
    * Lists the currently available output devices (speaker, earpiece, wired
-   * headset, Bluetooth) from this manager's own AudioSwitch instance - the
-   * one actually in control of routing, unlike flutter_webrtc's own
-   * AudioSwitchManager which this plugin disables on init. [callback] runs
-   * on this manager's dedicated thread, matching every other AudioSwitch
-   * access - callers must hop back to their own thread as needed.
+   * headset, Bluetooth) - from this manager's own AudioSwitch instance when
+   * a session is already active (the one actually in control of routing,
+   * unlike flutter_webrtc's own AudioSwitchManager which this plugin
+   * disables on init), or directly from the platform device list otherwise.
+   * AudioSwitch only reports devices while actively scanning, so without
+   * this fallback the list would come back empty any time this is called
+   * before the first call/mic test starts a session (e.g. opening Settings
+   * cold). [callback] runs on this manager's dedicated thread when a switch
+   * is active, or synchronously on the calling thread for the fallback -
+   * callers must hop back to their own thread as needed either way.
    */
   @Synchronized
-  fun getAvailableOutputDevices(callback: (List<AudioDevice>) -> Unit) {
+  fun getAvailableOutputDevices(callback: (List<OutputDeviceInfo>) -> Unit) {
     val switch = audioSwitch
-    if (switch == null) {
-      callback(emptyList())
+    if (switch != null) {
+      handler.post {
+        callback(switch.availableAudioDevices.map { OutputDeviceInfo(outputDeviceTypeName(it), it.name) })
+      }
       return
     }
-    handler.post {
-      callback(switch.availableAudioDevices)
-    }
+    callback(platformOutputDevices(context))
   }
 
   /**
@@ -288,6 +293,9 @@ internal class LKAudioSwitchManager(private val context: Context) {
   )
 }
 
+/** A listed output device: [typeName] is the stable id used for selection, [label] is display text. */
+internal data class OutputDeviceInfo(val typeName: String, val label: String)
+
 // Stable type-name id for an output AudioDevice, matching the scheme
 // flutter_webrtc's own (now-disabled) AudioDeviceKind used, so any existing
 // Dart-side handling of these strings keeps working unchanged.
@@ -297,6 +305,34 @@ internal fun outputDeviceTypeName(device: AudioDevice): String = when (device) {
   is AudioDevice.Speakerphone -> "speaker"
   is AudioDevice.Earpiece -> "earpiece"
   else -> "unknown"
+}
+
+// Same type scheme as outputDeviceTypeName, from a raw platform AudioDeviceInfo
+// instead of an AudioSwitch AudioDevice - used when no session is active yet
+// (see getAvailableOutputDevices).
+private fun outputDeviceTypeName(info: android.media.AudioDeviceInfo): String? = when (info.type) {
+  android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+  android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "bluetooth"
+  android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+  android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "wired-headset"
+  android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
+  android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "earpiece"
+  else -> null
+}
+
+/** Direct platform output-device query, independent of any AudioSwitch session lifecycle. */
+private fun platformOutputDevices(context: Context): List<OutputDeviceInfo> {
+  if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+    return emptyList()
+  }
+  val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+      ?: return emptyList()
+  return audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+      .mapNotNull { info ->
+        val typeName = outputDeviceTypeName(info) ?: return@mapNotNull null
+        OutputDeviceInfo(typeName, info.productName?.toString()?.takeIf { it.isNotBlank() } ?: typeName)
+      }
+      .distinctBy { it.typeName }
 }
 
 // Map the Flutter-side enum names (see android_audio_session_adapter.dart) to
