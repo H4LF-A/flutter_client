@@ -96,6 +96,22 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
   var lastBufferInfo: String = ""
     private set
 
+  // TEMPORARY diagnostic: how many times THIS instance's process() has been
+  // invoked, plus an object identity string. If more than one
+  // GainAudioProcessor instance is simultaneously registered into the
+  // shared, process-wide AudioProcessingController (see LiveKitPlugin's
+  // ensureGainProcessorRegistered doc), gain would be applied more than
+  // once per frame - compounding rather than simply applying once. This
+  // makes that directly checkable instead of assumed.
+  private val processCallCount = AtomicInteger(0)
+  private val instanceOrdinal = totalInstancesCreated.incrementAndGet()
+
+  val instanceId: String
+    get() = "#$instanceOrdinal/${Integer.toHexString(System.identityHashCode(this))}"
+
+  val lastProcessCallCount: Int
+    get() = processCallCount.get()
+
   fun setGain(gain: Double) {
     val clamped = gain.coerceIn(0.0, MAX_GAIN)
     gainMilli.set((clamped * 1000).toInt())
@@ -111,6 +127,7 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
   }
 
   override fun process(numBands: Int, numFrames: Int, buffer: ByteBuffer?) {
+    processCallCount.incrementAndGet()
     lastNumBands = numBands
     lastNumFrames = numFrames
     if (buffer == null) {
@@ -213,6 +230,15 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
   }
 
   companion object {
+    // TEMPORARY diagnostic: total GainAudioProcessor instances ever created
+    // in this process, across every LiveKitPlugin/FlutterEngine instance
+    // (e.g. the main engine and the separate background gateway-service
+    // engine both load this app's plugins). More than one instance existing
+    // doesn't by itself prove double-processing (a second instance's own
+    // gain stays at unity/no-op unless something also calls setGain on it),
+    // but it's the first fact needed to rule the theory in or out.
+    private val totalInstancesCreated = AtomicInteger(0)
+
     private const val UNITY_GAIN_MILLI = 1000
     private const val MAX_GAIN = 4.0
     private const val KNEE = 28000

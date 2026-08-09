@@ -270,12 +270,19 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
       // DSP path on many OEMs - baked-in AGC/NS/AEC tied to the audio source
       // itself, independent of the setUseHardwareX toggles above (those only
       // control whether WebRTC attaches the optional AudioEffect objects).
-      // MIC avoids that, same as the bypassVoiceProcessing branch above.
+      // MIC alone didn't fully avoid this in practice - Android's API
+      // contract doesn't actually guarantee MIC is processing-free on every
+      // OEM, only that it's the general-purpose source. VOICE_RECOGNITION is
+      // the source apps conventionally use specifically to get the least
+      // processed signal a device offers (speech-to-text engines can't
+      // tolerate AGC pumping/artifacts either), so it's a better match for
+      // "this app runs its own software gain/NS and wants raw input" than
+      // MIC's more general, less-specific intent.
       boolean useLowLatency = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O;
       audioDeviceModuleBuilder.setUseHardwareAcousticEchoCanceler(false)
                         .setUseLowLatency(useLowLatency)
                         .setUseHardwareNoiseSuppressor(false)
-                        .setAudioSource(MediaRecorder.AudioSource.MIC);
+                        .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION);
     }
 
     // Configure audio sample rates if specified
