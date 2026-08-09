@@ -64,6 +64,17 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
   var lastPeakAfterGain: Int = 0
     private set
 
+  // TEMPORARY diagnostic: per-band RMS of the raw (pre-gain) signal, to
+  // answer whether bands 1/2 carry real independent audio content (in which
+  // case leaving them untouched by DeepFilterNoiseProcessor while band 0 is
+  // denoised could itself produce reconstruction artifacts) or are
+  // near-silent/redundant (in which case band-0-only processing is safe).
+  // Index 0/1/2 = band 0/1/2. Remove once the noise-suppression artifact
+  // investigation is done.
+  @Volatile
+  var lastBandRms: IntArray = IntArray(0)
+    private set
+
   fun setGain(gain: Double) {
     val clamped = gain.coerceIn(0.0, MAX_GAIN)
     gainMilli.set((clamped * 1000).toInt())
@@ -91,6 +102,7 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
     val totalSamples = numBands * numFrames
     var peakBefore = 0
     var peakAfter = 0
+    val bandSumSquares = DoubleArray(numBands)
     for (i in 0 until totalSamples) {
       val index = base + i * 2
       if (index + 2 > buffer.limit()) {
@@ -100,6 +112,10 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
       val absBefore = kotlin.math.abs(sample)
       if (absBefore > peakBefore) {
         peakBefore = absBefore
+      }
+      val bandIndex = if (numFrames > 0) i / numFrames else 0
+      if (bandIndex < numBands) {
+        bandSumSquares[bandIndex] += sample.toDouble() * sample.toDouble()
       }
       if (gain == UNITY_GAIN_MILLI) {
         if (absBefore > peakAfter) {
@@ -122,6 +138,9 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
     buffer.order(originalOrder)
     lastPeakBeforeGain = peakBefore
     lastPeakAfterGain = peakAfter
+    lastBandRms = IntArray(numBands) { band ->
+      if (numFrames > 0) kotlin.math.sqrt(bandSumSquares[band] / numFrames).toInt() else 0
+    }
   }
 
   private fun softLimit(sample: Int): Int {

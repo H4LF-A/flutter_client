@@ -213,7 +213,14 @@ class VoiceSettingsState {
       noiseSuppressionTier: _resolveNoiseSuppressionTier(json),
       echoCancellation: json['echoCancellation'] as bool? ?? true,
       noiseSuppression: json['noiseSuppression'] as bool? ?? true,
-      autoGainControl: json['autoGainControl'] as bool? ?? true,
+      // Matches the constructor default (false, not true): this app now has
+      // its own explicit input-volume gain control, which WebRTC's built-in
+      // AGC actively fights (AGC tries to normalize loudness to a fixed
+      // target regardless of input level, which looks like "any nonzero
+      // gain jumps to max volume" against a user-set manual gain). A stored
+      // settings blob predating this field, or missing the key for any
+      // other reason, must not silently re-enable that conflict.
+      autoGainControl: json['autoGainControl'] as bool? ?? false,
       preferSpeakerOutput: json['preferSpeakerOutput'] as bool? ?? false,
       cameraResolution: CameraResolution.fromJson(
         json['cameraResolution'] as String?,

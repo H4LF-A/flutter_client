@@ -499,6 +499,7 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
             "numFrames" to gainProcessor.lastNumFrames,
             "peakBeforeGain" to gainProcessor.lastPeakBeforeGain,
             "peakAfterGain" to gainProcessor.lastPeakAfterGain,
+            "bandRms" to gainProcessor.lastBandRms.toList(),
           ),
         )
       }
