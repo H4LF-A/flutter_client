@@ -500,6 +500,7 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
             "peakBeforeGain" to gainProcessor.lastPeakBeforeGain,
             "peakAfterGain" to gainProcessor.lastPeakAfterGain,
             "bandRms" to gainProcessor.lastBandRms.toList(),
+            "bufferInfo" to gainProcessor.lastBufferInfo,
           ),
         )
       }

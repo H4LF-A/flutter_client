@@ -156,4 +156,44 @@ class GainAudioProcessorTest {
     assertEquals(10000, result[NUM_FRAMES].toInt())
     assertEquals(15000, result[NUM_FRAMES * 2].toInt())
   }
+
+  @Test
+  fun `limiting a loud band scales a quiet band by the same factor, not independently`() {
+    // WebRTC hands this hook a frequency band-split representation, not
+    // independent channels (confirmed via the real device's bandRms
+    // diagnostic). A synthesis filter downstream recombines the bands into
+    // the final signal, and only stays correct if their *relative*
+    // amplitude is preserved - so if gain pushes one band into the
+    // limiter, every other band must be scaled down by that exact same
+    // factor, not limited independently based on its own amplitude.
+    val processor = GainAudioProcessor()
+    processor.setGain(2.0)
+    val samples = ShortArray(NUM_BANDS * NUM_FRAMES)
+    samples[0] = 20000 // band 0: loud enough to need limiting at 2x
+    samples[NUM_FRAMES] = 1000 // band 1: quiet, well within headroom at 2x
+    val buffer = bufferOf(samples)
+    processor.process(NUM_BANDS, NUM_FRAMES, buffer)
+    val result = readShorts(buffer, samples.size)
+    // Band 0 must actually be limited (not exactly 40000, which would
+    // overflow anyway) - this is the same case as the hard-clamp test above.
+    assertTrue(result[0] in 20000..32767, "band 0 should be limited, got ${result[0]}")
+    // The scale factor the limiter applied to band 0 (output / linear-2x
+    // target) must be the same factor applied to band 1 - not simply
+    // band 1's own unclamped 2x value (2000), which is what independent
+    // per-band limiting would produce instead.
+    val appliedScale = result[0].toDouble() / 40000.0
+    val expectedBand1 = (1000 * 2 * appliedScale).toInt()
+    assertTrue(
+      kotlin.math.abs(result[NUM_FRAMES] - expectedBand1) <= 2,
+      "band 1 should scale by the same factor as band 0 " +
+        "(expected ~$expectedBand1, got ${result[NUM_FRAMES]})",
+    )
+    // And explicitly: band 1 must NOT be the full unclamped 2x (2000),
+    // which would mean it was limited independently of band 0.
+    assertTrue(
+      result[NUM_FRAMES] < 2000,
+      "band 1 was not scaled down alongside band 0 - got ${result[NUM_FRAMES]}, " +
+        "expected less than the unclamped 2000",
+    )
+  }
 }
