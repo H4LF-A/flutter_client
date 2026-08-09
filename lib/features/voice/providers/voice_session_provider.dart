@@ -2188,6 +2188,12 @@ class VoiceSession extends _$VoiceSession {
           true,
           audioCaptureOptions: applicator.buildAudioCaptureOptions(settings),
         );
+        // See the matching comment in VoiceSettingsApplicator.refreshMicrophone:
+        // the audio session policy is only auto-applied once at
+        // Room.connect() time, not on every later track (re)creation - this
+        // is itself a track-creation point (an out-of-band reconcile can run
+        // well after connect), so re-assert it here too.
+        await AudioManager.instance.applyOptionsForConnect();
         await applicator.applyInputVolume(room: room, settings: settings);
         if (state.errorMessage == kVoiceSessionErrorMicPublish) {
           state = state.copyWith(clearError: true);

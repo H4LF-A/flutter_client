@@ -299,6 +299,18 @@ class AudioManager {
     return Native.getAndroidAudioProcessingFormat();
   }
 
+  /// Enables or disables the native DeepFilterNet noise-suppression bridge -
+  /// Android's replacement for Krisp's "Enhanced" tier, which requires
+  /// LiveKit Cloud licensing a self-hosted server can't provide. Android
+  /// only; no-op elsewhere (other platforms keep using Krisp/their own
+  /// DeepFilterNet integration as before).
+  Future<void> setAndroidEnhancedNoiseSuppressionEnabled(bool enabled) async {
+    if (!lkPlatformIs(PlatformType.android)) {
+      return;
+    }
+    await Native.setAndroidEnhancedNoiseSuppressionEnabled(enabled);
+  }
+
   Future<void> _applyCurrentAudioSessionPolicy() async {
     if (lkPlatformIs(PlatformType.iOS)) {
       await _configureAppleAudioSession(_options);

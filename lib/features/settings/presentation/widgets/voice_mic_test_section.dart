@@ -94,8 +94,11 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
       noiseFilterSupported: applicator.noiseFilterSupported,
     );
     ErrorCode? krispError;
+    // Drives both Krisp bypass and (on Android) the native DeepFilterNet
+    // enable toggle, so the mic test exercises the same path a live call
+    // uses instead of only ever bypassing Krisp directly.
+    await applicator.applyNoiseFilterBypass(settings);
     if (applicator.noiseFilter != null) {
-      await applicator.noiseFilter!.setBypass(processing.bypassNoiseFilter);
       // TEMPORARY diagnostic: Krisp (the "enhanced" ML filter) requires
       // authenticating against LiveKit's own backend for license validation
       // (see LiveKitNoiseFilter.onPublish -> krisp.authenticate). Krisp noise
@@ -330,9 +333,17 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
     talker.info('Mic test: reapplying gain=$gain (input volume changed)');
     await Helper.setVolume(gain, track.mediaStreamTrack);
     await AudioManager.instance.setAndroidInputGain(gain);
+    // Give a couple of audio frames time to flow through the new gain
+    // before reading back the peak-amplitude diagnostic - this is what
+    // proves (rather than assumes) the gain reached the actual buffer.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    final Map<String, dynamic>? audioProcessingFormat = await AudioManager
+        .instance
+        .getAndroidAudioProcessingFormat();
     if (mounted) {
       setState(() {
         _appliedGain = gain;
+        _audioProcessingFormat = audioProcessingFormat;
       });
     }
   }

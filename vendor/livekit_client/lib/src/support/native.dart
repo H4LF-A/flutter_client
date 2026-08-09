@@ -284,6 +284,21 @@ class Native {
     return null;
   }
 
+  /// Enables or disables the native DeepFilterNet noise-suppression bridge
+  /// (Android's replacement for Krisp, which doesn't work on self-hosted
+  /// servers). Android only.
+  @internal
+  static Future<void> setAndroidEnhancedNoiseSuppressionEnabled(bool enabled) async {
+    try {
+      await channel.invokeMethod<void>(
+        'setAndroidEnhancedNoiseSuppressionEnabled',
+        <String, dynamic>{'enabled': enabled},
+      );
+    } catch (error) {
+      logger.warning('setAndroidEnhancedNoiseSuppressionEnabled did throw $error');
+    }
+  }
+
   /// Enable or disable LiveKit's automatic iOS audio-session management from
   /// native WebRTC audio-engine lifecycle callbacks.
   @internal

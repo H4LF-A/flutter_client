@@ -95,3 +95,15 @@ if (kotlinExt?.hasProperty("compilerOptions")) {
         jvmTarget = JavaVersion.VERSION_1_8.toString()
     }
 }
+
+// Builds the DeepFilterNet3 noise-suppression native library (rust/) for
+// Android and packages it as a jniLib, using the same CargoKit tooling
+// already used by irondash_engine_context/super_native_extensions elsewhere
+// in this app's dependency tree - copied in rather than pulled from pub.dev
+// since this crate isn't published anywhere.
+apply from: "./cargokit/gradle/plugin.gradle"
+
+cargokit {
+    manifestDir = "rust"
+    libname = "deep_filter_android_native"
+}

@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_webrtc/flutter_webrtc.dart' show Helper;
 import 'package:fluxer_app/core/talker.dart';
 import 'package:fluxer_app/features/voice/domain/voice_settings_state.dart';
@@ -82,13 +85,28 @@ class VoiceSettingsApplicator {
   }
 
   Future<void> applyNoiseFilterBypass(VoiceSettingsState settings) async {
-    if (!noiseFilterSupported || noiseFilter == null) {
-      return;
-    }
     final ResolvedVoiceProcessing processing = resolveVoiceProcessing(
       settings: settings,
       noiseFilterSupported: noiseFilterSupported,
     );
+    // Krisp requires authenticating against LiveKit Cloud for license
+    // validation, which a self-hosted server can't provide - it silently
+    // passes audio through unprocessed on Android instead of erroring.
+    // "Enhanced" on Android is driven by a native DeepFilterNet port instead
+    // (same model desktop/web use, see DeepFilterNoiseProcessor.kt), so
+    // Krisp itself stays permanently bypassed there.
+    if (!kIsWeb && Platform.isAndroid) {
+      await AudioManager.instance.setAndroidEnhancedNoiseSuppressionEnabled(
+        processing.useNoiseFilter,
+      );
+      if (noiseFilterSupported && noiseFilter != null) {
+        await noiseFilter!.setBypass(true);
+      }
+      return;
+    }
+    if (!noiseFilterSupported || noiseFilter == null) {
+      return;
+    }
     await noiseFilter!.setBypass(processing.bypassNoiseFilter);
   }
 
@@ -113,6 +131,16 @@ class VoiceSettingsApplicator {
       true,
       audioCaptureOptions: buildAudioCaptureOptions(settings),
     );
+    // The audio session policy (MODE_NORMAL etc.) is only ever applied once,
+    // at Room.connect() time (see NativeAudioManagement.start(), called from
+    // room.dart before engine.connect()) - it's never re-applied on a later
+    // mic republish like the one above. Recreating the LocalAudioTrack here
+    // lets the platform ADM's own low-level setup run unopposed for that new
+    // track, the same way the standalone mic test used to before it started
+    // calling this too - so any settings change that republishes the mic
+    // (tier, device, EC) can silently revert Android to MODE_IN_COMMUNICATION
+    // mid-call. Re-assert the policy after republishing to close that gap.
+    await AudioManager.instance.applyOptionsForConnect();
     await applyInputVolume(room: room, settings: settings);
   }
 

@@ -53,6 +53,8 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
   private val mainHandler = Handler(Looper.getMainLooper())
   private val gainProcessor = GainAudioProcessor()
   private var gainProcessorRegistered = false
+  private val deepFilterProcessor = DeepFilterNoiseProcessor()
+  private var deepFilterProcessorRegistered = false
 
   /// The MethodChannel that will the communication between Flutter and native Android
   ///
@@ -83,6 +85,15 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
     val controller = flutterWebRTCPlugin.getAudioProcessingController() ?: return
     controller.capturePostProcessing.addProcessor(gainProcessor)
     gainProcessorRegistered = true
+  }
+
+  private fun ensureDeepFilterProcessorRegistered() {
+    if (deepFilterProcessorRegistered) {
+      return
+    }
+    val controller = flutterWebRTCPlugin.getAudioProcessingController() ?: return
+    controller.capturePostProcessing.addProcessor(deepFilterProcessor)
+    deepFilterProcessorRegistered = true
   }
 
   @SuppressLint("SuspiciousIndentation")
@@ -461,6 +472,7 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
         audioSwitchManager?.configure(configuration)
         audioSwitchManager?.start()
         ensureGainProcessorRegistered()
+        ensureDeepFilterProcessorRegistered()
         result.success(null)
       }
 
@@ -471,6 +483,13 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
         result.success(null)
       }
 
+      "setAndroidEnhancedNoiseSuppressionEnabled" -> {
+        ensureDeepFilterProcessorRegistered()
+        val enabled = call.argument<Boolean>("enabled") ?: false
+        deepFilterProcessor.setEnabled(enabled)
+        result.success(null)
+      }
+
       "getAudioProcessingFormat" -> {
         result.success(
           mapOf(
@@ -478,6 +497,8 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
             "numChannels" to gainProcessor.lastNumChannels,
             "numBands" to gainProcessor.lastNumBands,
             "numFrames" to gainProcessor.lastNumFrames,
+            "peakBeforeGain" to gainProcessor.lastPeakBeforeGain,
+            "peakAfterGain" to gainProcessor.lastPeakAfterGain,
           ),
         )
       }
@@ -533,6 +554,8 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
 
     audioDeviceModuleExecutor?.shutdown()
     audioDeviceModuleExecutor = null
+
+    deepFilterProcessor.destroy()
 
     // Cleanup all processors
     audioProcessors.values.forEach { it.cleanup() }
