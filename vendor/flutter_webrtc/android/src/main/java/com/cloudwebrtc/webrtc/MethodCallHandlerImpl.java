@@ -265,10 +265,17 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
       // Forcing hardware AEC/NS off unconditionally makes WebRTC's software
       // APM the single, always-active processing path, so the app's chosen
       // tier is what actually runs.
+      // AudioSource.VOICE_COMMUNICATION (WebRTC's own default when this
+      // isn't set) routes capture through the device's hardware voice-call
+      // DSP path on many OEMs - baked-in AGC/NS/AEC tied to the audio source
+      // itself, independent of the setUseHardwareX toggles above (those only
+      // control whether WebRTC attaches the optional AudioEffect objects).
+      // MIC avoids that, same as the bypassVoiceProcessing branch above.
       boolean useLowLatency = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O;
       audioDeviceModuleBuilder.setUseHardwareAcousticEchoCanceler(false)
                         .setUseLowLatency(useLowLatency)
-                        .setUseHardwareNoiseSuppressor(false);
+                        .setUseHardwareNoiseSuppressor(false)
+                        .setAudioSource(MediaRecorder.AudioSource.MIC);
     }
 
     // Configure audio sample rates if specified
@@ -329,12 +336,13 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
     }
 
     audioDeviceModule = audioDeviceModuleBuilder.createAudioDeviceModule();
-
-    if(!bypassVoiceProcessing) {
-       if(JavaAudioDeviceModule.isBuiltInNoiseSuppressorSupported()) {
-         audioDeviceModule.setNoiseSuppressorEnabled(true);
-       }
-    }
+    // Hardware NS is deliberately kept off here (see setUseHardwareNoiseSuppressor(false)
+    // above) - this used to unconditionally re-enable it right after, which
+    // silently defeated that and ran hardware NS underneath whatever
+    // software noise-suppression path the app's tier setting selected
+    // (WebRTC's software APM, or the DeepFilterNet Enhanced processor),
+    // producing audible artifacts from two independent NS algorithms
+    // processing the same signal in sequence.
 
 
     getUserMediaImpl.audioDeviceModule = (JavaAudioDeviceModule) audioDeviceModule;
