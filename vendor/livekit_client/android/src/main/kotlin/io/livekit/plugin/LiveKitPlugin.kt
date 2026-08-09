@@ -555,6 +555,27 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
     audioDeviceModuleExecutor?.shutdown()
     audioDeviceModuleExecutor = null
 
+    // AudioProcessingController lives inside FlutterWebRTCPlugin.sharedSingleton,
+    // a process-wide static singleton independent of this plugin instance's
+    // lifecycle - this app also runs a separate background FlutterEngine
+    // (flutter_foreground_task, for the gateway service). If that engine or
+    // any other attach/detach cycle ever creates a second LiveKitPlugin
+    // instance, its processors would otherwise never be removed from the
+    // shared list, silently compounding gain/noise-suppression on every
+    // subsequent engine attach - each with its own independently-guarded
+    // gainProcessorRegistered flag, unaware of any earlier instance.
+    if (gainProcessorRegistered) {
+      flutterWebRTCPlugin.getAudioProcessingController()
+        ?.capturePostProcessing
+        ?.removeProcessor(gainProcessor)
+      gainProcessorRegistered = false
+    }
+    if (deepFilterProcessorRegistered) {
+      flutterWebRTCPlugin.getAudioProcessingController()
+        ?.capturePostProcessing
+        ?.removeProcessor(deepFilterProcessor)
+      deepFilterProcessorRegistered = false
+    }
     deepFilterProcessor.destroy()
 
     // Cleanup all processors

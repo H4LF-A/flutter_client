@@ -101,7 +101,7 @@ pub extern "system" fn Java_io_livekit_plugin_DeepFilterNoiseProcessor_nativeIni
 /// is undefined behavior.
 #[no_mangle]
 pub extern "system" fn Java_io_livekit_plugin_DeepFilterNoiseProcessor_nativeProcess(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     handle: jlong,
     samples: JShortArray,
@@ -135,4 +135,92 @@ pub extern "system" fn Java_io_livekit_plugin_DeepFilterNoiseProcessor_nativeDes
     let _ = panic::catch_unwind(|| unsafe {
         drop(Box::from_raw(handle as *mut Processor));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Runs the actual DeepFilterNet3 model on synthetic audio, on the host
+    // machine (no Android/JNI involved) - this validates the algorithm
+    // itself independent of the JNI bridge or on-device wiring, which is
+    // what "does Enhanced actually suppress noise at all" needs, without a
+    // full Android build+install cycle.
+
+    fn next_noise_sample(seed: &mut u32) -> i16 {
+        *seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        ((*seed >> 16) as u16 as i16) / 4
+    }
+
+    fn noise_frame(seed: &mut u32) -> [i16; FRAME_SAMPLES] {
+        let mut frame = [0i16; FRAME_SAMPLES];
+        for sample in frame.iter_mut() {
+            *sample = next_noise_sample(seed);
+        }
+        frame
+    }
+
+    fn frame_rms(samples: &[i16; FRAME_SAMPLES]) -> f64 {
+        let sum_squares: f64 = samples
+            .iter()
+            .map(|sample| {
+                let normalized = f64::from(*sample) / 32_768.0;
+                normalized * normalized
+            })
+            .sum();
+        (sum_squares / samples.len() as f64).sqrt()
+    }
+
+    #[test]
+    fn embedded_model_initializes_at_the_confirmed_device_frame_shape() {
+        // If this fails, the on-device format (48kHz/mono/480 samples,
+        // confirmed via the mic-test diagnostic) no longer matches what the
+        // model expects - the Kotlin bridge's numFrames check would then
+        // silently skip every frame on a real device.
+        Processor::new(DEFAULT_LEVEL_DB).expect("embedded model must initialize at this shape");
+    }
+
+    #[test]
+    fn zero_level_passes_audio_through_essentially_unchanged() {
+        let mut processor = Processor::new(0.0).expect("embedded model must initialize");
+        let mut seed = 0x2545_f491u32;
+        for _ in 0..5 {
+            let original = noise_frame(&mut seed);
+            let mut processed = original;
+            processor
+                .process_frame(&mut processed)
+                .expect("processing must succeed");
+            for (output, input) in processed.iter().zip(original.iter()) {
+                assert!((i32::from(*output) - i32::from(*input)).abs() <= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn max_level_meaningfully_attenuates_steady_noise() {
+        let mut processor = Processor::new(100.0).expect("embedded model must initialize");
+        let mut seed = 0x9e37_79b9u32;
+        // The model needs a few frames of context before attenuation kicks
+        // in fully - warm it up the same way steady background noise would
+        // in a real call, then compare RMS on later frames.
+        let mut last_rms_ratio = 1.0;
+        for i in 0..30 {
+            let original = noise_frame(&mut seed);
+            let mut processed = original;
+            processor
+                .process_frame(&mut processed)
+                .expect("processing must succeed");
+            if i >= 20 {
+                let input_rms = frame_rms(&original);
+                let output_rms = frame_rms(&processed);
+                if input_rms > 0.0 {
+                    last_rms_ratio = output_rms / input_rms;
+                }
+            }
+        }
+        assert!(
+            last_rms_ratio < 0.5,
+            "expected max-level suppression to noticeably reduce steady-noise RMS, ratio was {last_rms_ratio}",
+        );
+    }
 }
