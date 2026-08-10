@@ -16,31 +16,32 @@
 
 package io.livekit.plugin
 
-import com.cloudwebrtc.webrtc.audio.AudioProcessingAdapter
+import android.media.AudioFormat
+import com.cloudwebrtc.webrtc.audio.RawAudioBufferProcessor
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Applies a software gain multiplier to the locally captured microphone
- * signal, band 0 only (see PcmBuffer doc for why band 0, not every band).
- * org.webrtc.AudioTrack.setVolume() has no observable effect on Android for
- * local (captured) tracks, so input-volume control happens here instead, in
- * flutter_webrtc's capture-time [AudioProcessingAdapter.ExternalAudioFrameProcessing]
- * hook (the same extension point Krisp's noise filter uses).
+ * signal. org.webrtc.AudioTrack.setVolume() has no observable effect on
+ * Android for local (captured) tracks, so input-volume control happens
+ * here instead.
  *
- * Reads and writes samples via [PcmBuffer], never touching
- * `ByteBuffer.order()` - see that class's doc for why. Every earlier variant
- * of this class (a per-band limiter, a cross-band-uniform limiter, band-0-
- * only) that instead called `buffer.order(LITTLE_ENDIAN)` before
- * `getShort`/`putShort` produced real distortion confirmed by a remote
- * listener on the actual transmitted audio, while writes with that call
- * removed did not reproduce it. Krisp's own working implementation
- * (`LiveKitKrispNoiseFilter.process`) never touches `buffer.order()` either -
- * it hands the buffer straight to native code.
+ * Plugs into [RawAudioBufferProcessor] - raw, pre-APM PCM straight from
+ * AudioRecord.read(), fullband mono at the true capture rate, with an
+ * explicit bytesRead count - rather than WebRTC's internal capture-post-
+ * processing hook (a frequency band-split representation whose exact
+ * semantics turned out not to be documented anywhere reachable for this
+ * precompiled AAR, and which - across every strategy tried for reading and
+ * writing it - produced real distortion confirmed by a remote call
+ * participant on the actual transmitted audio). This hook receives one
+ * genuine, coherent audio stream, so gain applies uniformly across the
+ * whole buffer - no band concept to reason about.
+ *
+ * Reads and writes samples via [PcmBuffer] (single-byte absolute access,
+ * never touching `ByteBuffer.order()`).
  */
-internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFrameProcessing {
-  // Fixed-point (x1000) so the audio-processing thread can read this
-  // lock-free without contending with the Dart-triggered setter.
+internal class GainAudioProcessor : RawAudioBufferProcessor.RawPcmProcessor {
   private val gainMilli = AtomicInteger(UNITY_GAIN_MILLI)
 
   val lastRequestedGain: Double
@@ -55,11 +56,7 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
     private set
 
   @Volatile
-  var lastNumBands: Int? = null
-    private set
-
-  @Volatile
-  var lastNumFrames: Int? = null
+  var lastBytesRead: Int? = null
     private set
 
   @Volatile
@@ -68,13 +65,6 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
 
   @Volatile
   var lastPeakAfterGain: Int = 0
-    private set
-
-  // Per-band RMS of the raw (pre-gain) signal - kept as a diagnostic; band 1
-  // carries substantial real energy on real devices, which is exactly why
-  // gain (like DeepFilterNoiseProcessor) only ever touches band 0.
-  @Volatile
-  var lastBandRms: IntArray = IntArray(0)
     private set
 
   @Volatile
@@ -95,32 +85,23 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
     gainMilli.set((clamped * 1000).toInt())
   }
 
-  override fun initialize(sampleRateHz: Int, numChannels: Int) {
-    lastSampleRateHz = sampleRateHz
-    lastNumChannels = numChannels
-  }
-
-  override fun reset(newRate: Int) {
-    lastSampleRateHz = newRate
-  }
-
-  override fun process(numBands: Int, numFrames: Int, buffer: ByteBuffer?) {
+  override fun process(buffer: ByteBuffer, audioFormat: Int, channelCount: Int, sampleRate: Int, bytesRead: Int) {
     processCallCount.incrementAndGet()
-    lastNumBands = numBands
-    lastNumFrames = numFrames
-    if (buffer == null) {
+    lastSampleRateHz = sampleRate
+    lastNumChannels = channelCount
+    lastBytesRead = bytesRead
+    lastBufferInfo = "audioFormat=$audioFormat capacity=${buffer.capacity()} " +
+      "position=${buffer.position()} limit=${buffer.limit()}"
+    if (audioFormat != AudioFormat.ENCODING_PCM_16BIT) {
+      // Unsupported format - skip rather than misinterpret bytes.
       return
     }
-    lastBufferInfo = "capacity=${buffer.capacity()} limit=${buffer.limit()} " +
-      "position=${buffer.position()} remaining=${buffer.remaining()} " +
-      "assumedTotalSamples=${numBands * numFrames}"
     val base = buffer.position()
-    val totalSamples = numBands * numFrames
+    val totalSamples = bytesRead / 2
+    val gain = gainMilli.get()
 
     var peakBefore = 0
-    val bandSumSquares = DoubleArray(numBands)
-    var band0PeakScaled = 0L
-    val gain = gainMilli.get()
+    var peakScaled = 0L
     for (i in 0 until totalSamples) {
       val index = base + i * 2
       if (!PcmBuffer.hasSample(buffer, index)) {
@@ -131,19 +112,12 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
       if (absBefore > peakBefore) {
         peakBefore = absBefore
       }
-      val bandIndex = if (numFrames > 0) i / numFrames else 0
-      if (bandIndex < numBands) {
-        bandSumSquares[bandIndex] += sample.toDouble() * sample.toDouble()
-      }
-      if (gain != UNITY_GAIN_MILLI && bandIndex == 0) {
+      if (gain != UNITY_GAIN_MILLI) {
         val scaledAbs = kotlin.math.abs(sample.toLong() * gain / UNITY_GAIN_MILLI)
-        if (scaledAbs > band0PeakScaled) {
-          band0PeakScaled = scaledAbs
+        if (scaledAbs > peakScaled) {
+          peakScaled = scaledAbs
         }
       }
-    }
-    lastBandRms = IntArray(numBands) { band ->
-      if (numFrames > 0) kotlin.math.sqrt(bandSumSquares[band] / numFrames).toInt() else 0
     }
     lastPeakBeforeGain = peakBefore
 
@@ -152,18 +126,18 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
       return
     }
 
-    // A single scalar computed from band 0's own loudest sample, applied
-    // only within band 0 - bands 1+ are left untouched (see class doc).
-    val targetPeak = softLimitTarget(band0PeakScaled)
-    val limiterScaleMilli = if (band0PeakScaled > 0) {
-      ((targetPeak.toDouble() / band0PeakScaled.toDouble()) * UNITY_GAIN_MILLI).toLong()
+    // A single scalar for the whole buffer: linear gain, then (if needed) a
+    // uniform additional scale-down so the loudest sample lands within the
+    // soft-limited target.
+    val targetPeak = softLimitTarget(peakScaled)
+    val limiterScaleMilli = if (peakScaled > 0) {
+      ((targetPeak.toDouble() / peakScaled.toDouble()) * UNITY_GAIN_MILLI).toLong()
     } else {
       UNITY_GAIN_MILLI.toLong()
     }
 
     var peakAfter = 0
-    val band0Samples = numFrames.coerceAtMost(totalSamples)
-    for (i in 0 until band0Samples) {
+    for (i in 0 until totalSamples) {
       val index = base + i * 2
       if (!PcmBuffer.hasSample(buffer, index)) {
         break
@@ -196,11 +170,9 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
   }
 
   companion object {
-    // Total GainAudioProcessor instances ever created in this process,
-    // across every LiveKitPlugin/FlutterEngine instance (e.g. the main
-    // engine and the separate background gateway-service engine both load
-    // this app's plugins) - a diagnostic that ruled out double-registration
-    // as the cause of the earlier reported distortion.
+    // Total GainAudioProcessor instances ever created in this process -
+    // ruled out double-registration as a cause of the earlier reported
+    // distortion (confirmed exactly one instance was ever active).
     private val totalInstancesCreated = AtomicInteger(0)
 
     private const val UNITY_GAIN_MILLI = 1000

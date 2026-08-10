@@ -74,7 +74,7 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
     audioDeviceModuleExecutor = Executors.newSingleThreadExecutor()
   }
 
-  // The PeerConnectionFactory (and its AudioProcessingController) is created
+  // The PeerConnectionFactory (and its RawAudioBufferProcessor) is created
   // lazily on first getUserMedia, not at plugin-attach time, so this is
   // called on-demand from every entry point that might run before or after
   // that - it's idempotent and cheap to call repeatedly.
@@ -82,8 +82,8 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
     if (gainProcessorRegistered) {
       return
     }
-    val controller = flutterWebRTCPlugin.getAudioProcessingController() ?: return
-    controller.capturePostProcessing.addProcessor(gainProcessor)
+    val processor = flutterWebRTCPlugin.getRawAudioBufferProcessor() ?: return
+    processor.addProcessor(gainProcessor)
     gainProcessorRegistered = true
   }
 
@@ -91,8 +91,8 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
     if (deepFilterProcessorRegistered) {
       return
     }
-    val controller = flutterWebRTCPlugin.getAudioProcessingController() ?: return
-    controller.capturePostProcessing.addProcessor(deepFilterProcessor)
+    val processor = flutterWebRTCPlugin.getRawAudioBufferProcessor() ?: return
+    processor.addProcessor(deepFilterProcessor)
     deepFilterProcessorRegistered = true
   }
 
@@ -495,15 +495,14 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
           mapOf(
             "sampleRateHz" to gainProcessor.lastSampleRateHz,
             "numChannels" to gainProcessor.lastNumChannels,
-            "numBands" to gainProcessor.lastNumBands,
-            "numFrames" to gainProcessor.lastNumFrames,
+            "bytesRead" to gainProcessor.lastBytesRead,
             "peakBeforeGain" to gainProcessor.lastPeakBeforeGain,
             "peakAfterGain" to gainProcessor.lastPeakAfterGain,
-            "bandRms" to gainProcessor.lastBandRms.toList(),
             "bufferInfo" to gainProcessor.lastBufferInfo,
             "gainProcessorInstanceId" to gainProcessor.instanceId,
             "gainProcessorCallCount" to gainProcessor.lastProcessCallCount,
-            "gainProcessorDisabledLastRequestedGain" to gainProcessor.lastRequestedGain,
+            "gainProcessorRequestedGain" to gainProcessor.lastRequestedGain,
+            "deepFilterChunkSamples" to deepFilterProcessor.lastChunkSamples,
           ),
         )
       }
@@ -560,7 +559,7 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
     audioDeviceModuleExecutor?.shutdown()
     audioDeviceModuleExecutor = null
 
-    // AudioProcessingController lives inside FlutterWebRTCPlugin.sharedSingleton,
+    // RawAudioBufferProcessor lives inside FlutterWebRTCPlugin.sharedSingleton,
     // a process-wide static singleton independent of this plugin instance's
     // lifecycle - this app also runs a separate background FlutterEngine
     // (flutter_foreground_task, for the gateway service). If that engine or
@@ -570,15 +569,11 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
     // subsequent engine attach - each with its own independently-guarded
     // gainProcessorRegistered flag, unaware of any earlier instance.
     if (gainProcessorRegistered) {
-      flutterWebRTCPlugin.getAudioProcessingController()
-        ?.capturePostProcessing
-        ?.removeProcessor(gainProcessor)
+      flutterWebRTCPlugin.getRawAudioBufferProcessor()?.removeProcessor(gainProcessor)
       gainProcessorRegistered = false
     }
     if (deepFilterProcessorRegistered) {
-      flutterWebRTCPlugin.getAudioProcessingController()
-        ?.capturePostProcessing
-        ?.removeProcessor(deepFilterProcessor)
+      flutterWebRTCPlugin.getRawAudioBufferProcessor()?.removeProcessor(deepFilterProcessor)
       deepFilterProcessorRegistered = false
     }
     deepFilterProcessor.destroy()

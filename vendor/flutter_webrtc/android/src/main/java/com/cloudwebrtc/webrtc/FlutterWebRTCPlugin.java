@@ -14,6 +14,7 @@ import androidx.lifecycle.LifecycleOwner;
 
 import com.cloudwebrtc.webrtc.audio.AudioProcessingController;
 import com.cloudwebrtc.webrtc.audio.AudioSwitchManager;
+import com.cloudwebrtc.webrtc.audio.RawAudioBufferProcessor;
 import com.cloudwebrtc.webrtc.utils.AnyThreadSink;
 import com.cloudwebrtc.webrtc.utils.ConstraintsMap;
 
@@ -58,6 +59,10 @@ public class FlutterWebRTCPlugin implements FlutterPlugin, ActivityAware, EventC
 
     public AudioProcessingController getAudioProcessingController() {
         return methodCallHandler.audioProcessingController;
+    }
+
+    public RawAudioBufferProcessor getRawAudioBufferProcessor() {
+        return methodCallHandler == null ? null : methodCallHandler.rawAudioBufferProcessor;
     }
 
     public MediaStreamTrack getTrackForId(String trackId, String peerConnectionId) {

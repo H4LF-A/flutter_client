@@ -25,6 +25,7 @@ import androidx.annotation.RequiresApi;
 
 import com.cloudwebrtc.webrtc.audio.AudioDeviceKind;
 import com.cloudwebrtc.webrtc.audio.AudioProcessingController;
+import com.cloudwebrtc.webrtc.audio.RawAudioBufferProcessor;
 import com.cloudwebrtc.webrtc.audio.AudioSwitchManager;
 import com.cloudwebrtc.webrtc.audio.AudioUtils;
 import com.cloudwebrtc.webrtc.audio.LocalAudioTrack;
@@ -141,6 +142,7 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
   private CustomVideoDecoderFactory videoDecoderFactory;
 
   public AudioProcessingController audioProcessingController;
+  public RawAudioBufferProcessor rawAudioBufferProcessor;
 
   public static class LogSink implements Loggable {
     @Override
@@ -284,6 +286,13 @@ public class MethodCallHandlerImpl implements MethodCallHandler, StateProvider {
                         .setUseHardwareNoiseSuppressor(false)
                         .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION);
     }
+
+    // Raw, pre-APM mic PCM hook (see RawAudioBufferProcessor's doc) - fullband
+    // mono at the true capture rate, straight from AudioRecord.read(), with
+    // an explicit bytesRead count. Registered unconditionally; harmless
+    // no-op with zero processors attached.
+    rawAudioBufferProcessor = new RawAudioBufferProcessor();
+    audioDeviceModuleBuilder.setAudioBufferCallback(rawAudioBufferProcessor);
 
     // Configure audio sample rates if specified
     // This allows high-quality audio playback instead of defaulting to WebRtcAudioManager's queried rate

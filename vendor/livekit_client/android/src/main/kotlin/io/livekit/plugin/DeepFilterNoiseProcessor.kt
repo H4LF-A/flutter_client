@@ -16,9 +16,11 @@
 
 package io.livekit.plugin
 
-import com.cloudwebrtc.webrtc.audio.AudioProcessingAdapter
+import android.media.AudioFormat
+import com.cloudwebrtc.webrtc.audio.RawAudioBufferProcessor
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -29,33 +31,29 @@ import java.util.concurrent.atomic.AtomicLong
  * via a small JNI bridge (see rust/) to the same `deep_filter` crate
  * desktop's native/webrtc-sender uses.
  *
- * Plugs into flutter_webrtc's capture-time
- * [AudioProcessingAdapter.ExternalAudioFrameProcessing] hook, the same
- * extension point [GainAudioProcessor] and Krisp both use. A device
- * diagnostic (see the mic test screen's audioProcessingFormat field)
- * confirmed WebRTC hands this hook 3 bands of 480 samples each at
- * 48kHz/mono - matching the DeepFilterNet model's required frame shape
- * exactly. Band 0 is treated as the primary signal to process; bands 1/2
- * are passed through unmodified, since their exact role in this specific
- * WebRTC build's band-split representation isn't documented anywhere
- * reachable (the WebRTC Android AAR is precompiled, no source available).
- *
- * Reads and writes band 0 via [PcmBuffer], never calling
- * `ByteBuffer.order(...)` - see that class's doc. This class used to call
- * `buffer.order(LITTLE_ENDIAN)` before `getShort`/`putShort`, the same
- * pattern every gain-processing variant used, and a remote call listener
- * confirmed hearing real distortion in the actual transmitted audio while
- * that call was in place.
+ * Plugs into [RawAudioBufferProcessor] - raw, pre-APM PCM straight from
+ * AudioRecord.read(), fullband mono at the true capture rate - rather than
+ * WebRTC's internal capture-post-processing hook (see [GainAudioProcessor]'s
+ * doc for why: undocumented band-split semantics that produced real,
+ * remote-confirmed distortion no matter how carefully it was read/written).
+ * The model needs exactly [FRAME_SAMPLES] (480, 10ms @ 48kHz) samples per
+ * call. This hook's own delivery chunk size is expected (matching the
+ * standard WebRTC 10ms convention) to already be exactly that; [scratch]
+ * is a fixed-size reusable buffer rather than an accumulator spanning
+ * multiple calls, because a partial frame carried over to the *next*
+ * callback couldn't be written back into *this* callback's buffer (which
+ * is gone by then) - so a chunk size that doesn't match is skipped and
+ * recorded via [lastChunkSamples] rather than silently misprocessed.
  */
-internal class DeepFilterNoiseProcessor : AudioProcessingAdapter.ExternalAudioFrameProcessing {
+internal class DeepFilterNoiseProcessor : RawAudioBufferProcessor.RawPcmProcessor {
   private val enabled = AtomicBoolean(false)
   private val handle = AtomicLong(0)
   private val scratch = ShortArray(FRAME_SAMPLES)
 
-  // Model load happens on whatever thread calls this (normally the platform
-  // main thread, via the method channel that flips the tier setting) and can
-  // take noticeably longer than a frame budget - acceptable since it's a
-  // one-time cost on an explicit user setting change, not a hot path.
+  @Volatile
+  var lastChunkSamples: Int = 0
+    private set
+
   fun setEnabled(value: Boolean) {
     enabled.set(value)
     if (value) {
@@ -74,21 +72,17 @@ internal class DeepFilterNoiseProcessor : AudioProcessingAdapter.ExternalAudioFr
     }
   }
 
-  override fun initialize(sampleRateHz: Int, numChannels: Int) {}
-
-  override fun reset(newRate: Int) {}
-
-  override fun process(numBands: Int, numFrames: Int, buffer: ByteBuffer?) {
-    if (buffer == null || !enabled.get()) {
-      return
-    }
-    if (numFrames != FRAME_SAMPLES) {
-      // The frame shape no longer matches what this bridge was built
-      // against (see class doc) - skip rather than feed the model garbage.
+  override fun process(buffer: ByteBuffer, audioFormat: Int, channelCount: Int, sampleRate: Int, bytesRead: Int) {
+    if (!enabled.get() || audioFormat != AudioFormat.ENCODING_PCM_16BIT) {
       return
     }
     val currentHandle = handle.get()
     if (currentHandle == 0L) {
+      return
+    }
+    val totalSamples = bytesRead / 2
+    lastChunkSamples = totalSamples
+    if (totalSamples != FRAME_SAMPLES) {
       return
     }
     val base = buffer.position()
