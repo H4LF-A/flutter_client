@@ -43,6 +43,7 @@ class BackgroundGatewayTaskHandler extends TaskHandler {
   ReadyEvent? _pendingUnreadSyncReadyEvent;
   String? _pendingUnreadSyncUserId;
   String? _pendingUnreadSyncApiBaseUrl;
+  String? _pendingUnreadSyncMediaBaseUrl;
   String? _pendingUnreadSyncToken;
 
   @override
@@ -96,6 +97,7 @@ class BackgroundGatewayTaskHandler extends TaskHandler {
         final message = mapMessageCreateEventToPushMessage(
           event,
           currentUserId: snapshot.userId,
+          mediaBaseUrl: snapshot.mediaBaseUrl,
         );
         if (message != null && !_isAppForeground) {
           unawaited(LocalPushNotifications().showPushMessage(message));
@@ -118,6 +120,7 @@ class BackgroundGatewayTaskHandler extends TaskHandler {
           _pendingUnreadSyncReadyEvent = readyEvent;
           _pendingUnreadSyncUserId = snapshot.userId;
           _pendingUnreadSyncApiBaseUrl = snapshot.apiBaseUrl;
+          _pendingUnreadSyncMediaBaseUrl = snapshot.mediaBaseUrl;
           _pendingUnreadSyncToken = token;
           return;
         }
@@ -125,6 +128,7 @@ class BackgroundGatewayTaskHandler extends TaskHandler {
           event: readyEvent,
           currentUserId: snapshot.userId,
           apiBaseUrl: snapshot.apiBaseUrl,
+          mediaBaseUrl: snapshot.mediaBaseUrl,
           token: token,
         );
       });
@@ -178,6 +182,7 @@ class BackgroundGatewayTaskHandler extends TaskHandler {
     final ReadyEvent? pending = _pendingUnreadSyncReadyEvent;
     final String? userId = _pendingUnreadSyncUserId;
     final String? apiBaseUrl = _pendingUnreadSyncApiBaseUrl;
+    final String? mediaBaseUrl = _pendingUnreadSyncMediaBaseUrl;
     final String? token = _pendingUnreadSyncToken;
     if (pending == null || userId == null || apiBaseUrl == null || token == null) {
       return;
@@ -185,11 +190,13 @@ class BackgroundGatewayTaskHandler extends TaskHandler {
     _pendingUnreadSyncReadyEvent = null;
     _pendingUnreadSyncUserId = null;
     _pendingUnreadSyncApiBaseUrl = null;
+    _pendingUnreadSyncMediaBaseUrl = null;
     _pendingUnreadSyncToken = null;
     _runUnreadSync(
       event: pending,
       currentUserId: userId,
       apiBaseUrl: apiBaseUrl,
+      mediaBaseUrl: mediaBaseUrl,
       token: token,
     );
   }
@@ -198,6 +205,7 @@ class BackgroundGatewayTaskHandler extends TaskHandler {
     required ReadyEvent event,
     required String currentUserId,
     required String apiBaseUrl,
+    required String? mediaBaseUrl,
     required String token,
   }) {
     if (_unreadSyncInFlight) {
@@ -209,6 +217,7 @@ class BackgroundGatewayTaskHandler extends TaskHandler {
         event: event,
         currentUserId: currentUserId,
         apiBaseUrl: apiBaseUrl,
+        mediaBaseUrl: mediaBaseUrl,
         token: token,
         isAppForeground: false,
       ).whenComplete(() => _unreadSyncInFlight = false),

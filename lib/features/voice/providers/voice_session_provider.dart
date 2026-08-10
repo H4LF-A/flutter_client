@@ -1225,6 +1225,13 @@ class VoiceSession extends _$VoiceSession {
       } on Object catch (e) {
         talker.warning('[Voice] failed to dispose room$reasonSuffix: $e');
       }
+      // Restore the platform default volume-key behavior outside of a call -
+      // otherwise the override applied in applyAndroidAudioStreamType (see
+      // its own comment) would keep steering hardware volume keys away from
+      // media volume for the rest of the app after the call ends.
+      if (!kIsWeb && Platform.isAndroid) {
+        await AudioManager.instance.setAndroidVolumeControlStream(null);
+      }
       _intentionalLiveKitTeardown = false;
     }
   }
@@ -1916,9 +1923,15 @@ class VoiceSession extends _$VoiceSession {
       _pendingRingSilently = false;
     }
     await _reconcileRemoteAudioForSelfConnection(reason: 'room_connected');
-    await ref
-        .read(voiceSettingsApplicatorProvider)
-        .applySpeakerOutput(settings: ref.read(voiceSettingsProvider));
+    final VoiceSettingsApplicator connectedApplicator = ref.read(
+      voiceSettingsApplicatorProvider,
+    );
+    await connectedApplicator.applySpeakerOutput(
+      settings: ref.read(voiceSettingsProvider),
+    );
+    await connectedApplicator.applyAndroidAudioStreamType(
+      settings: ref.read(voiceSettingsProvider),
+    );
     unawaited(
       _ensureLocalMicrophone(reason: 'room_connected', attempt: attempt),
     );

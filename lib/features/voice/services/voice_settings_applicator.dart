@@ -267,6 +267,15 @@ class VoiceSettingsApplicator {
       ),
     );
     await AudioManager.instance.applyOptionsForConnect();
+    // The session streamType above only feeds LKAudioSwitchManager's own
+    // audio-focus/routing bookkeeping - it doesn't change which stream the
+    // hardware volume keys actually control, since the AudioAttributes on
+    // WebRTC's playback AudioTrack are fixed once at process startup and
+    // never revisited. Activity.setVolumeControlStream is the API Android
+    // provides for that; assert it directly so the toggle has a real effect.
+    await AudioManager.instance.setAndroidVolumeControlStream(
+      settings.androidUseMediaVolume ? 'music' : 'voiceCall',
+    );
   }
 
   String? _resolveDeviceId(String deviceId) {

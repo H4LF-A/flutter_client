@@ -268,6 +268,23 @@ class Native {
     }
   }
 
+  /// Overrides which Android audio stream the hardware volume keys adjust
+  /// while the app is in the foreground (`Activity.setVolumeControlStream`),
+  /// independent of what's actually playing or any AudioAttributes on the
+  /// WebRTC playback track - see the native handler for why those can't be
+  /// used for this. Pass `null` to restore the platform default behavior.
+  @internal
+  static Future<void> setAndroidVolumeControlStream(String? streamType) async {
+    try {
+      await channel.invokeMethod<void>(
+        'setAndroidVolumeControlStream',
+        <String, dynamic>{'streamType': streamType},
+      );
+    } catch (error) {
+      logger.warning('setAndroidVolumeControlStream did throw $error');
+    }
+  }
+
   /// Diagnostic: the sample rate/channel/band-framing values WebRTC's native
   /// capture audio processing chain is actually using. Null until at least
   /// one frame has been captured through it.

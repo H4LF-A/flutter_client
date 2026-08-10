@@ -291,6 +291,21 @@ class AudioManager {
     await Native.setAndroidInputGain(gain);
   }
 
+  /// Overrides which Android audio stream the hardware volume keys control
+  /// while this app is in the foreground. [streamType] is `'music'` or
+  /// `'voiceCall'`; pass `null` to restore the platform default. Neither the
+  /// stream type in [AndroidAudioSessionConfiguration] (LKAudioSwitchManager's
+  /// own audio-focus/routing bookkeeping) nor the AudioAttributes baked into
+  /// the WebRTC playback track at process startup actually change which
+  /// stream physical volume keys adjust - this is the API Android provides
+  /// specifically for that. Android only; no-op elsewhere.
+  Future<void> setAndroidVolumeControlStream(String? streamType) async {
+    if (!lkPlatformIs(PlatformType.android)) {
+      return;
+    }
+    await Native.setAndroidVolumeControlStream(streamType);
+  }
+
   /// Diagnostic: the sample rate/channel/band-framing values WebRTC's native
   /// capture audio processing chain is actually using on this device. Null
   /// before any audio has been captured, or on non-Android platforms.

@@ -119,6 +119,12 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
       // unopposed, which on Android can leave AudioManager in
       // MODE_IN_COMMUNICATION instead of this app's configured policy.
       await AudioManager.instance.applyOptionsForConnect();
+      // Also assert the Android media/call volume-stream override that a
+      // real call applies (see applyAndroidAudioStreamType) - without this
+      // the mic test's raw loopback peer connection is left on whatever the
+      // platform defaults to, ignoring the toggle just like a live call did
+      // before that fix.
+      await applicator.applyAndroidAudioStreamType(settings: settings);
       // Force speaker output for the test regardless of the user's regular
       // call preference (which defaults to earpiece/off): the whole point of
       // this test is to hear yourself while looking at the screen, not
@@ -308,6 +314,9 @@ class _VoiceMicTestSectionState extends ConsumerState<VoiceMicTestSection> {
       await AudioManager.instance.setSpeakerOutputPreferred(
         settings.preferSpeakerOutput,
       );
+    }
+    if (!kIsWeb && Platform.isAndroid) {
+      await AudioManager.instance.setAndroidVolumeControlStream(null);
     }
     if (mounted) {
       setState(() {

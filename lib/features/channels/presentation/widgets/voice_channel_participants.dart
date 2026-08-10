@@ -69,6 +69,7 @@ class _VoiceChannelParticipantTile extends StatelessWidget {
             size: 20,
             showStatus: false,
             avatarColor: p.avatarColor,
+            userId: p.userId,
           ),
           const SizedBox(width: 6),
           Expanded(

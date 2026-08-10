@@ -27,7 +27,9 @@ import 'package:fluxer_app/features/chat/providers/messages/message_realtime_pro
 import 'package:fluxer_app/features/friends/providers/blocked_user_ids_provider.dart';
 import 'package:fluxer_app/features/gateway/providers/gateway_event_providers.dart';
 import 'package:fluxer_app/features/gateway/providers/guild_sync_provider.dart';
+import 'package:fluxer_app/features/guilds/domain/guild.dart';
 import 'package:fluxer_app/features/guilds/providers/guild_availability_provider.dart';
+import 'package:fluxer_app/features/guilds/providers/guild_list_view_model.dart';
 import 'package:fluxer_app/features/guilds/providers/guild_permissions_provider.dart';
 import 'package:fluxer_app/features/members/data/member_cache_evictor.dart';
 import 'package:fluxer_app/features/members/data/member_list_update_batcher.dart';
@@ -81,6 +83,19 @@ Raw<StreamSubscription<GatewayEvent>?> gatewayEventListener(Ref ref) {
   ref.listen<Set<String>>(blockedUserIdsProvider, (_, Set<String> next) {
     mentionCache.updateBlockedUserIds(next);
   }, fireImmediately: true);
+  // Covers the case where the local guild list is still hydrating (or a new
+  // guild is joined) after onReady already ran its one-shot syncAllIfNeeded
+  // below - newly-appeared guilds still need to be marked active or their
+  // sidebar voice indicators never receive live updates. syncAllIfNeeded
+  // is a no-op for guilds already synced this session.
+  ref.listen<List<Guild>>(
+    guildListViewModelProvider.select((GuildListViewState s) => s.guilds),
+    (_, List<Guild> next) {
+      ref
+          .read(guildSyncProvider.notifier)
+          .syncAllIfNeeded(next.map((Guild g) => g.id));
+    },
+  );
   final handler = GatewayEventHandler(
     database: db,
     readStateRepository: ReadStateRepository(
@@ -121,6 +136,23 @@ Raw<StreamSubscription<GatewayEvent>?> gatewayEventListener(Ref ref) {
             .read(guildSyncProvider.notifier)
             .syncIfNeeded(activeGuildId, force: true);
       }
+      // Mark every guild active, not just the one currently open - the
+      // sidebar shows live voice-activity badges for all of them
+      // (guildVoiceActivityProvider is watched per-guild in guild_navbar.dart),
+      // but the server only pushes incremental voice-state updates to
+      // sessions that have marked that specific guild active. Without this,
+      // a fresh gateway session (reconnect, app resume) only receives live
+      // updates for the open guild, leaving every other guild's voice
+      // indicators stuck at the connect-time snapshot until the user taps
+      // into it and triggers syncIfNeeded there.
+      ref
+          .read(guildSyncProvider.notifier)
+          .syncAllIfNeeded(
+            ref
+                .read(guildListViewModelProvider)
+                .guilds
+                .map((g) => g.id),
+          );
       ref.read(gatewaySessionRecoveryProvider.notifier).bump();
       ref.read(pendingPushNotificationPathProvider.notifier).flushIfReady();
     },

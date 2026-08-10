@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:fluxer_app/core/badge/push_badge_count_parser.dart';
@@ -41,6 +43,43 @@ final class LocalPushNotifications {
   // notification per message.
   final Map<String, _ConversationState> _conversationState =
       <String, _ConversationState>{};
+  final Dio _avatarDio = Dio();
+  // Small in-memory cache, scoped to this singleton's process lifetime -
+  // avoids re-downloading the same sender's avatar for every message in a
+  // fast-moving conversation. Not persisted to disk: this app instance
+  // (background isolate or foreground) is short-lived enough per wake that a
+  // full disk cache isn't worth the added complexity here.
+  static const int _maxAvatarCacheEntries = 64;
+  final Map<String, Uint8List?> _avatarCache = <String, Uint8List?>{};
+
+  Future<Uint8List?> _fetchAvatarBytes(String? url) async {
+    if (url == null || url.isEmpty) {
+      return null;
+    }
+    if (_avatarCache.containsKey(url)) {
+      return _avatarCache[url];
+    }
+    Uint8List? bytes;
+    try {
+      final Response<List<int>> response = await _avatarDio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final List<int>? data = response.data;
+      if (data != null) {
+        bytes = Uint8List.fromList(data);
+      }
+    } on Object catch (e) {
+      if (kDebugMode) {
+        debugPrint('[LocalPushNotifications] avatar fetch failed: $e');
+      }
+    }
+    if (_avatarCache.length >= _maxAvatarCacheEntries) {
+      _avatarCache.remove(_avatarCache.keys.first);
+    }
+    _avatarCache[url] = bytes;
+    return bytes;
+  }
 
   Future<bool> ensureInitialized({
     void Function(String? payloadJson)? onNotificationTap,
@@ -152,6 +191,9 @@ final class LocalPushNotifications {
 
     if (defaultTargetPlatform == TargetPlatform.android) {
       final String? conversationKey = resolvePushGroupTag(enrichedPayload);
+      final Uint8List? avatarBytes = await _fetchAvatarBytes(
+        enrichedPayload['author_avatar_url'],
+      );
       if (conversationKey != null) {
         await _showOrUpdateConversationNotification(
           conversationKey: conversationKey,
@@ -159,9 +201,30 @@ final class LocalPushNotifications {
           body: body,
           payload: payloadWithMessageId,
           badgeCount: badgeCount,
+          largeIcon: avatarBytes,
         );
         return;
       }
+      final int id = pushMessageNotificationId(message.id);
+      final NotificationDetails details = _notificationDetailsForPlatform(
+        badgeCount: badgeCount,
+        payload: enrichedPayload,
+        largeIcon: avatarBytes,
+      );
+      try {
+        await _plugin.show(
+          id: id,
+          title: title,
+          body: body,
+          notificationDetails: details,
+          payload: jsonEncode(payloadWithMessageId),
+        );
+      } on Object catch (e, st) {
+        if (kDebugMode) {
+          debugPrint('[LocalPushNotifications] show failed: $e\n$st');
+        }
+      }
+      return;
     }
 
     final int id = pushMessageNotificationId(message.id);
@@ -195,6 +258,7 @@ final class LocalPushNotifications {
     required String body,
     required Map<String, String> payload,
     int? badgeCount,
+    Uint8List? largeIcon,
   }) async {
     final _ConversationState state = _conversationState.putIfAbsent(
       conversationKey,
@@ -224,6 +288,9 @@ final class LocalPushNotifications {
             importance: Importance.high,
             priority: Priority.high,
             icon: _androidNotificationIcon,
+            largeIcon: largeIcon != null
+                ? ByteArrayAndroidBitmap(largeIcon)
+                : null,
             number: badgeCount,
             groupKey: _appGroupKey,
             tag: conversationKey,
@@ -379,6 +446,7 @@ final class LocalPushNotifications {
   NotificationDetails _notificationDetailsForPlatform({
     int? badgeCount,
     Map<String, String> payload = const <String, String>{},
+    Uint8List? largeIcon,
   }) {
     final String? groupKey = resolvePushGroupTag(payload);
     final String? messageTag = resolvePushDisplayTag(payload);
@@ -392,6 +460,9 @@ final class LocalPushNotifications {
             importance: Importance.high,
             priority: Priority.high,
             icon: _androidNotificationIcon,
+            largeIcon: largeIcon != null
+                ? ByteArrayAndroidBitmap(largeIcon)
+                : null,
             number: badgeCount,
             groupKey: groupKey,
             tag: messageTag,

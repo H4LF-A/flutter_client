@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:fluxer_app/core/gateway/background/background_gateway_session_snapshot.dart';
+import 'package:fluxer_app/core/instance/instance_endpoints.dart';
 import 'package:fluxer_app/core/providers/active_instance_provider.dart';
 import 'package:fluxer_app/core/router/fluxer_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -26,6 +27,7 @@ void backgroundGatewaySnapshotSync(Ref ref) {
           userId: userId,
           apiBaseUrl: apiBaseUrl,
           gatewayUrl: gatewayUrl,
+          mediaBaseUrl: InstanceEndpoints.media,
         ),
       ),
     );

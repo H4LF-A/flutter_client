@@ -38,6 +38,40 @@ class GuildSync extends _$GuildSync {
     }
   }
 
+  /// Marks every guild in [guildIds] active in one batched request, skipping
+  /// ones already synced this session. The server only pushes incremental
+  /// per-guild events (voice state joins/leaves, member updates) to sessions
+  /// that have marked that guild active - without this, only the guild the
+  /// user happens to have open receives live updates, leaving every other
+  /// guild's sidebar voice indicators stuck at whatever snapshot was current
+  /// when the session connected until the user taps into that guild.
+  void syncAllIfNeeded(Iterable<String> guildIds) {
+    final connection = ref.read(gatewayConnectionProvider);
+    if (connection.state != GatewayState.connected) {
+      return;
+    }
+    final List<String> pending = guildIds
+        .where((String id) => !state.contains(id))
+        .toList();
+    if (pending.isEmpty) {
+      return;
+    }
+    try {
+      connection.sendLazyRequest(
+        subscriptions: {
+          for (final String guildId in pending)
+            guildId: const LazyRequestSubscription(active: true, sync: true),
+        },
+      );
+      state = {...state, ...pending};
+      for (final String guildId in pending) {
+        prefetchGuildRoles(ref.read(memberRepositoryProvider), guildId);
+      }
+    } on Object catch (e) {
+      talker.warning('[GuildSync] Failed to sync all guilds: $e');
+    }
+  }
+
   Future<void> backfillMembersIfSparse(String guildId) async {
     await ref
         .read(guildMemberChunkWaiterProvider)

@@ -17,6 +17,7 @@ Future<void> runBackgroundGatewayUnreadSync({
   required ReadyEvent event,
   required String currentUserId,
   required String apiBaseUrl,
+  String? mediaBaseUrl,
   required String token,
   required bool isAppForeground,
 }) async {
@@ -50,6 +51,7 @@ Future<void> runBackgroundGatewayUnreadSync({
         final pushMessage = mapMessageResponseToPushMessage(
           message,
           currentUserId: currentUserId,
+          mediaBaseUrl: mediaBaseUrl,
         );
         if (pushMessage != null) {
           await LocalPushNotifications().showPushMessage(pushMessage);

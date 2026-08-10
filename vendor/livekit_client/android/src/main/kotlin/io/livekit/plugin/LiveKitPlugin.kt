@@ -17,11 +17,15 @@
 package io.livekit.plugin
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.NonNull
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
@@ -44,11 +48,12 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 
 /** LiveKitPlugin */
-class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
+class LiveKitPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
   private var audioProcessors = mutableMapOf<String, AudioProcessors>()
   private var flutterWebRTCPlugin = FlutterWebRTCPlugin.sharedSingleton
   private var binaryMessenger: BinaryMessenger? = null
   private var audioSwitchManager: LKAudioSwitchManager? = null
+  private var activity: Activity? = null
   private var audioDeviceModuleExecutor: ExecutorService? = null
   private val mainHandler = Handler(Looper.getMainLooper())
   private val gainProcessor = GainAudioProcessor()
@@ -544,6 +549,27 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
         result.success(null)
       }
 
+      "setAndroidVolumeControlStream" -> {
+        // Deliberately independent of configureAndroidAudioSession's
+        // androidAudioStreamType: that field only feeds LKAudioSwitchManager's
+        // own AudioSwitch instance (audio focus + output routing bookkeeping),
+        // and the actual AudioAttributes on the playback AudioTrack WebRTC
+        // creates are set once, at process-wide PeerConnectionFactory init
+        // (see flutter_webrtc's MethodCallHandlerImpl.initialize(), which is a
+        // no-op after the first call) - so neither ever changes which stream
+        // the hardware volume keys actually control. Activity.volumeControlStream
+        // is the API Android provides specifically for this: it overrides which
+        // stream physical volume keys adjust while this activity is resumed,
+        // independent of what's actually playing or any AudioAttributes.
+        val streamType = when (call.argument<String>("streamType")) {
+          "music" -> AudioManager.STREAM_MUSIC
+          "voiceCall" -> AudioManager.STREAM_VOICE_CALL
+          else -> AudioManager.USE_DEFAULT_STREAM_TYPE
+        }
+        activity?.volumeControlStream = streamType
+        result.success(null)
+      }
+
       else -> {
         result.notImplemented()
       }
@@ -581,5 +607,21 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
     // Cleanup all processors
     audioProcessors.values.forEach { it.cleanup() }
     audioProcessors.clear()
+  }
+
+  override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+    activity = binding.activity
+  }
+
+  override fun onDetachedFromActivityForConfigChanges() {
+    activity = null
+  }
+
+  override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+    activity = binding.activity
+  }
+
+  override fun onDetachedFromActivity() {
+    activity = null
   }
 }
