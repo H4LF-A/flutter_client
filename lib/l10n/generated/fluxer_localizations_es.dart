@@ -6960,6 +6960,13 @@ class FluxerLocalizationsEs extends FluxerLocalizations {
       'Cuando está desactivado, el audio se reproducirá por el auricular o los cascos conectados.';
 
   @override
+  String get audioAndVideoUseMediaVolumeLabel => 'Use media volume';
+
+  @override
+  String get audioAndVideoUseMediaVolumeDescription =>
+      'When off, the physical volume buttons control call volume instead of media volume while in a voice channel.';
+
+  @override
   String get audioAndVideoInputVolumeLabel => 'Volumen de entrada';
 
   @override

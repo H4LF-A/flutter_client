@@ -136,14 +136,16 @@ class AudioManager {
     _audioEngineStateController.add(nextState);
   }
 
-  /// Seeds the initial session intent without taking over the session lifecycle.
-  ///
-  /// `LiveKitClient.initialize(initialAudioSessionOptions: ...)` uses this so the
-  /// WebRTC initialization-time Android audio attributes and LiveKit's automatic
-  /// runtime session policy start from the same intent. Unlike
-  /// [setAudioSessionOptions], this keeps automatic management enabled and does
-  /// not apply native session changes immediately.
-  @internal
+  /// Updates the session intent without switching out of automatic
+  /// management (unlike [setAudioSessionOptions], which switches to manual
+  /// mode and stops LiveKit from re-applying the session on room/connect/
+  /// track lifecycle events - not what a live, in-call settings toggle
+  /// wants). `LiveKitClient.initialize(initialAudioSessionOptions: ...)`
+  /// uses this at startup so the WebRTC initialization-time Android audio
+  /// attributes and LiveKit's automatic runtime session policy start from
+  /// the same intent; callers changing a setting mid-session can also use
+  /// this, followed by [applyOptionsForConnect] to apply it immediately
+  /// rather than waiting for the next natural lifecycle event.
   void setInitialAudioSessionOptions(AudioSessionOptions options) {
     if (_managementMode != AudioSessionManagementMode.automatic) {
       return;

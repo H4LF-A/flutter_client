@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fluxer_app/core/limits/instance_limit_provider.dart';
@@ -125,6 +127,7 @@ class _UserAudioAndVideoState extends ConsumerState<UserAudioAndVideo> {
     );
     final bool canSwitchSpeaker = AudioManager.instance.canSwitchSpeakerphone;
     final bool showCameraDevicePicker = !isMobileVoiceCameraPlatform();
+    final bool isAndroid = !kIsWeb && Platform.isAndroid;
 
     return SingleChildScrollView(
       controller: widget.scrollController,
@@ -151,6 +154,15 @@ class _UserAudioAndVideoState extends ConsumerState<UserAudioAndVideo> {
                   value: settings.preferSpeakerOutput,
                   onChanged: (bool value) => unawaited(
                     settingsNotifier.setPreferSpeakerOutput(value: value),
+                  ),
+                ),
+              if (isAndroid)
+                FluxerSettingsSwitchItem(
+                  label: l10n.audioAndVideoUseMediaVolumeLabel,
+                  description: l10n.audioAndVideoUseMediaVolumeDescription,
+                  value: settings.androidUseMediaVolume,
+                  onChanged: (bool value) => unawaited(
+                    settingsNotifier.setAndroidUseMediaVolume(value: value),
                   ),
                 ),
               FluxerSelect<String>(

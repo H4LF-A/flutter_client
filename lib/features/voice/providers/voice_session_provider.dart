@@ -1950,6 +1950,7 @@ class VoiceSession extends _$VoiceSession {
       voiceSettingsApplicatorProvider,
     );
     await applicator.applySpeakerOutput(settings: next);
+    await applicator.applyAndroidAudioStreamType(settings: next);
     final bool outputDeviceChanged =
         previous == null || previous.outputDeviceId != next.outputDeviceId;
     if (outputDeviceChanged) {

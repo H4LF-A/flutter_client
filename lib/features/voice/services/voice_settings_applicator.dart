@@ -239,6 +239,36 @@ class VoiceSettingsApplicator {
     );
   }
 
+  /// Switches which Android stream type (STREAM_VOICE_CALL vs STREAM_MUSIC)
+  /// the platform associates with this app's audio session - which is what
+  /// physical volume buttons actually follow, independent of AudioManager's
+  /// mode (already forced to 'normal' at startup, see main.dart) or
+  /// anything about digital signal loudness. Re-applies the full session
+  /// config (matching main.dart's startup config exactly, only the stream
+  /// type varies) via setInitialAudioSessionOptions + applyOptionsForConnect
+  /// so a mid-call settings toggle takes effect immediately rather than
+  /// waiting for the next connect/republish.
+  Future<void> applyAndroidAudioStreamType({
+    required VoiceSettingsState settings,
+  }) async {
+    if (kIsWeb || !Platform.isAndroid) {
+      return;
+    }
+    AudioManager.instance.setInitialAudioSessionOptions(
+      AudioSessionOptions.communication(
+        android: AndroidAudioSessionConfiguration(
+          usageType: AndroidAudioAttributesUsageType.voiceCommunication,
+          contentType: AndroidAudioAttributesContentType.speech,
+          audioMode: AndroidAudioMode.normal,
+          streamType: settings.androidUseMediaVolume
+              ? AndroidAudioStreamType.music
+              : AndroidAudioStreamType.voiceCall,
+        ),
+      ),
+    );
+    await AudioManager.instance.applyOptionsForConnect();
+  }
+
   String? _resolveDeviceId(String deviceId) {
     if (deviceId == kDefaultVoiceDeviceId || deviceId.isEmpty) {
       return null;

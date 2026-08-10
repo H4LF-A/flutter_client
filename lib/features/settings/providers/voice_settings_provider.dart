@@ -102,6 +102,11 @@ class VoiceSettings extends _$VoiceSettings {
     _schedulePersist();
   }
 
+  Future<void> setAndroidUseMediaVolume({required bool value}) async {
+    state = state.copyWith(androidUseMediaVolume: value);
+    _schedulePersist();
+  }
+
   Future<void> setCameraFacing(VoiceCameraFacing value) async {
     state = state.copyWith(cameraFacing: value);
     _schedulePersist();

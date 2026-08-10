@@ -11664,6 +11664,18 @@ abstract class FluxerLocalizations {
   /// **'When off, audio plays through the earpiece or connected headphones.'**
   String get audioAndVideoUseSpeakerDescription;
 
+  /// Android switch label: use the media volume stream for physical volume buttons during voice channels, instead of the call volume stream.
+  ///
+  /// In en, this message translates to:
+  /// **'Use media volume'**
+  String get audioAndVideoUseMediaVolumeLabel;
+
+  /// Description for the Android media-volume toggle.
+  ///
+  /// In en, this message translates to:
+  /// **'When off, the physical volume buttons control call volume instead of media volume while in a voice channel.'**
+  String get audioAndVideoUseMediaVolumeDescription;
+
   /// Label for microphone input volume slider.
   ///
   /// In en, this message translates to:

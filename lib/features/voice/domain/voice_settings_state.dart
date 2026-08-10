@@ -97,6 +97,7 @@ class VoiceSettingsState {
     this.noiseSuppression = true,
     this.autoGainControl = false,
     this.preferSpeakerOutput = false,
+    this.androidUseMediaVolume = false,
     this.cameraResolution = CameraResolution.medium,
     this.cameraFacing = VoiceCameraFacing.front,
     this.mirrorCamera = true,
@@ -118,6 +119,13 @@ class VoiceSettingsState {
   final bool noiseSuppression;
   final bool autoGainControl;
   final bool preferSpeakerOutput;
+  // Whether physical volume buttons should control the same stream as
+  // media playback (STREAM_MUSIC) instead of the classic telephony call
+  // stream (STREAM_VOICE_CALL). Android tracks volume per stream type
+  // independently, and this doesn't change loudness itself - only which
+  // slider the volume buttons show/adjust while in a voice channel.
+  // Android only; ignored elsewhere.
+  final bool androidUseMediaVolume;
   final CameraResolution cameraResolution;
   final VoiceCameraFacing cameraFacing;
   final bool mirrorCamera;
@@ -142,6 +150,7 @@ class VoiceSettingsState {
     bool? noiseSuppression,
     bool? autoGainControl,
     bool? preferSpeakerOutput,
+    bool? androidUseMediaVolume,
     CameraResolution? cameraResolution,
     VoiceCameraFacing? cameraFacing,
     bool? mirrorCamera,
@@ -163,6 +172,8 @@ class VoiceSettingsState {
       noiseSuppression: noiseSuppression ?? this.noiseSuppression,
       autoGainControl: autoGainControl ?? this.autoGainControl,
       preferSpeakerOutput: preferSpeakerOutput ?? this.preferSpeakerOutput,
+      androidUseMediaVolume:
+          androidUseMediaVolume ?? this.androidUseMediaVolume,
       cameraResolution: cameraResolution ?? this.cameraResolution,
       cameraFacing: cameraFacing ?? this.cameraFacing,
       mirrorCamera: mirrorCamera ?? this.mirrorCamera,
@@ -188,6 +199,7 @@ class VoiceSettingsState {
       'noiseSuppression': noiseSuppression,
       'autoGainControl': autoGainControl,
       'preferSpeakerOutput': preferSpeakerOutput,
+      'androidUseMediaVolume': androidUseMediaVolume,
       'cameraResolution': cameraResolution.name,
       'cameraFacing': cameraFacing.name,
       'mirrorCamera': mirrorCamera,
@@ -222,6 +234,7 @@ class VoiceSettingsState {
       // other reason, must not silently re-enable that conflict.
       autoGainControl: json['autoGainControl'] as bool? ?? false,
       preferSpeakerOutput: json['preferSpeakerOutput'] as bool? ?? false,
+      androidUseMediaVolume: json['androidUseMediaVolume'] as bool? ?? false,
       cameraResolution: CameraResolution.fromJson(
         json['cameraResolution'] as String?,
       ),

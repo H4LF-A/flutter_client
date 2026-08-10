@@ -8738,6 +8738,14 @@
   "@audioAndVideoUseSpeakerDescription": {
     "description": "Description for the speaker output toggle on mobile."
   },
+  "audioAndVideoUseMediaVolumeLabel": "Use media volume",
+  "@audioAndVideoUseMediaVolumeLabel": {
+    "description": "Android switch label: use the media volume stream for physical volume buttons during voice channels, instead of the call volume stream."
+  },
+  "audioAndVideoUseMediaVolumeDescription": "When off, the physical volume buttons control call volume instead of media volume while in a voice channel.",
+  "@audioAndVideoUseMediaVolumeDescription": {
+    "description": "Description for the Android media-volume toggle."
+  },
   "audioAndVideoInputVolumeLabel": "Input volume",
   "@audioAndVideoInputVolumeLabel": {
     "description": "Label for microphone input volume slider."

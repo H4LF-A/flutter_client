@@ -6899,6 +6899,13 @@ class FluxerLocalizationsSr extends FluxerLocalizations {
       'When off, audio plays through the earpiece or connected headphones.';
 
   @override
+  String get audioAndVideoUseMediaVolumeLabel => 'Use media volume';
+
+  @override
+  String get audioAndVideoUseMediaVolumeDescription =>
+      'When off, the physical volume buttons control call volume instead of media volume while in a voice channel.';
+
+  @override
   String get audioAndVideoInputVolumeLabel => 'Input volume';
 
   @override
