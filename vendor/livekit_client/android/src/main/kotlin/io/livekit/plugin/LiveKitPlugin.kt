@@ -503,6 +503,7 @@ class LiveKitPlugin : FlutterPlugin, MethodCallHandler {
             "bufferInfo" to gainProcessor.lastBufferInfo,
             "gainProcessorInstanceId" to gainProcessor.instanceId,
             "gainProcessorCallCount" to gainProcessor.lastProcessCallCount,
+            "gainProcessorDisabledLastRequestedGain" to gainProcessor.lastRequestedGain,
           ),
         )
       }

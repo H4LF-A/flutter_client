@@ -22,36 +22,36 @@ import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Applies a software gain multiplier to the locally captured microphone
- * signal. org.webrtc.AudioTrack.setVolume() has no observable effect on
- * Android for local (captured) tracks - only for remote/playout tracks - so
- * input-volume control has to happen here instead, in flutter_webrtc's
- * capture-time [AudioProcessingAdapter.ExternalAudioFrameProcessing] hook
- * (the same extension point the Krisp noise filter uses), mutating the raw
- * PCM buffer in place before it's encoded and sent.
+ * DISABLED (diagnostic-only, no longer mutates audio): every variant tried
+ * here - a per-band limiter, a cross-band-uniform limiter, and finally
+ * restricting writes to band 0 only - produced the same "ear-raping"
+ * distortion at any non-unity gain, while leaving the buffer completely
+ * untouched (gain == unity) was confirmed clean every time. That rules out
+ * every hypothesis about *which* samples get written or *how* they're
+ * scaled; the only surviving correlation is "this class writes to the
+ * buffer at all". Rather than keep guessing at further write strategies,
+ * this now only reads (for the diagnostics below) and never calls
+ * buffer.putShort() - input-volume control falls back to
+ * org.webrtc.AudioTrack.setVolume() (Helper.setVolume on the Dart side),
+ * WebRTC's own SDK API, which couldn't be cleanly evaluated before now
+ * since this class's writes were always layered on top of it. Earlier
+ * testing had found AudioTrack.setVolume() to be a no-op for local tracks,
+ * but that conclusion predates several other fixes this session
+ * (MODE_IN_COMMUNICATION, forced-on hardware noise suppression, the
+ * VOICE_COMMUNICATION audio source) that could have been masking it.
  *
- * WebRTC hands this hook a frequency band-split representation, not
- * independent/duplicate channels - confirmed via the per-band RMS
- * diagnostic below, which shows materially different, frequency-dependent
- * energy per band. A synthesis filter downstream (inside the precompiled
- * WebRTC AAR, no source available) recombines these bands into the final
- * fullband signal, and that recombination only stays correct if the
- * *relative* amplitude between bands is preserved. Because of that, gain
- * and limiting here are applied as a single linear scalar for the whole
- * frame - computed once from the loudest sample across every band - rather
- * than per-band or per-sample, which would compress bands by different
- * amounts and corrupt the reconstruction even though each band's own
- * numbers would look reasonable in isolation.
- *
- * Also records the sample rate/channel/band-framing values WebRTC actually
- * hands to this hook, plus observed peak amplitude before/after gain -
- * diagnostics to prove (rather than assume) the gain is actually landing on
- * the buffer that gets encoded and sent.
+ * Still records the sample rate/channel/band-framing values and observed
+ * peak/RMS WebRTC hands this hook, and the gain value the Dart side last
+ * requested (never applied) - diagnostics kept from the investigation that
+ * got this class to this point.
  */
 internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFrameProcessing {
-  // Fixed-point (x1000) so the audio-processing thread can read this
-  // lock-free without contending with the Dart-triggered setter.
+  // Fixed-point (x1000). No longer read by process() (see class doc) -
+  // kept only so the last value Dart requested is visible as a diagnostic.
   private val gainMilli = AtomicInteger(UNITY_GAIN_MILLI)
+
+  val lastRequestedGain: Double
+    get() = gainMilli.get() / 1000.0
 
   @Volatile
   var lastSampleRateHz: Int? = null
@@ -136,19 +136,15 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
     lastBufferInfo = "capacity=${buffer.capacity()} limit=${buffer.limit()} " +
       "position=${buffer.position()} remaining=${buffer.remaining()} " +
       "assumedTotalSamples=${numBands * numFrames}"
-    val gain = gainMilli.get()
     val originalOrder = buffer.order()
     buffer.order(ByteOrder.LITTLE_ENDIAN)
     val base = buffer.position()
     val totalSamples = numBands * numFrames
 
-    // Pass 1: measure the raw signal (peak, per-band RMS) across every band
-    // - diagnostic only, does not affect what gets modified below - and, if
-    // gain is non-unity, the peak the gain multiply alone would produce
-    // within BAND 0 ONLY (see EXPERIMENT note below).
+    // Read-only: peak/RMS of the actual captured signal, across every band.
+    // Nothing below writes to the buffer - see class doc.
     var peakBefore = 0
     val bandSumSquares = DoubleArray(numBands)
-    var globalPeakScaled = 0L
     for (i in 0 until totalSamples) {
       val index = base + i * 2
       if (index + 2 > buffer.limit()) {
@@ -163,78 +159,13 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
       if (bandIndex < numBands) {
         bandSumSquares[bandIndex] += sample.toDouble() * sample.toDouble()
       }
-      // EXPERIMENT: only band 0 (i < numFrames) is a candidate for gain -
-      // matching the scope DeepFilterNoiseProcessor already safely uses.
-      // Reported audio distortion has survived every other explanation
-      // tried (feedback, AGC, duplicate processing, audio source) and
-      // correlates only with "does this code modify the buffer at all" -
-      // this isolates whether modifying band 1 specifically (as the
-      // previous cross-band-uniform version did) is the actual cause,
-      // since band 1 might not be simple duplicate/parallel audio content.
-      if (gain != UNITY_GAIN_MILLI && i < numFrames) {
-        val scaledAbs = kotlin.math.abs(sample.toLong() * gain / UNITY_GAIN_MILLI)
-        if (scaledAbs > globalPeakScaled) {
-          globalPeakScaled = scaledAbs
-        }
-      }
     }
     lastBandRms = IntArray(numBands) { band ->
       if (numFrames > 0) kotlin.math.sqrt(bandSumSquares[band] / numFrames).toInt() else 0
     }
     lastPeakBeforeGain = peakBefore
-
-    if (gain == UNITY_GAIN_MILLI) {
-      buffer.order(originalOrder)
-      lastPeakAfterGain = peakBefore
-      return
-    }
-
-    // A single scalar computed from band 0's own loudest sample, applied
-    // only within band 0 (see EXPERIMENT note above) - bands 1+ are left
-    // completely untouched this build.
-    val targetPeak = softLimitTarget(globalPeakScaled)
-    val limiterScaleMilli = if (globalPeakScaled > 0) {
-      ((targetPeak.toDouble() / globalPeakScaled.toDouble()) * UNITY_GAIN_MILLI).toLong()
-    } else {
-      UNITY_GAIN_MILLI.toLong()
-    }
-
-    var peakAfter = 0
-    val band0Samples = numFrames.coerceAtMost(totalSamples)
-    for (i in 0 until band0Samples) {
-      val index = base + i * 2
-      if (index + 2 > buffer.limit()) {
-        break
-      }
-      val sample = buffer.getShort(index).toInt()
-      val scaled = sample.toLong() * gain / UNITY_GAIN_MILLI
-      val output = (scaled * limiterScaleMilli / UNITY_GAIN_MILLI)
-        .coerceIn(-32768L, 32767L)
-        .toInt()
-      buffer.putShort(index, output.toShort())
-      val absAfter = kotlin.math.abs(output)
-      if (absAfter > peakAfter) {
-        peakAfter = absAfter
-      }
-    }
+    lastPeakAfterGain = peakBefore
     buffer.order(originalOrder)
-    lastPeakAfterGain = peakAfter
-  }
-
-  // Soft-knee target: linear below the knee, smoothly compressed towards
-  // full scale above it. Operates on the frame's single global peak (see
-  // class doc), not per-sample or per-band - a naive hard clamp per sample
-  // would produce harsh digital clipping distortion, and limiting per-band
-  // independently would corrupt the cross-band relationship WebRTC's
-  // synthesis filter depends on.
-  private fun softLimitTarget(absSample: Long): Long {
-    if (absSample <= KNEE) {
-      return absSample
-    }
-    val over = (absSample - KNEE).toDouble()
-    val headroom = (32767 - KNEE).toDouble()
-    val compressed = KNEE + headroom * (1.0 - kotlin.math.exp(-over / headroom))
-    return compressed.toLong().coerceIn(0L, 32767L)
   }
 
   companion object {
@@ -249,6 +180,5 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
 
     private const val UNITY_GAIN_MILLI = 1000
     private const val MAX_GAIN = 4.0
-    private const val KNEE = 28000
   }
 }
