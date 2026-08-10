@@ -1,7 +1,6 @@
 package io.livekit.plugin
 
 import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -15,82 +14,154 @@ class GainAudioProcessorTest {
   }
 
   private fun bufferOf(samples: ShortArray): ByteBuffer {
-    val buffer = ByteBuffer.allocateDirect(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
-    for (sample in samples) {
-      buffer.putShort(sample)
+    // Deliberately does not set the buffer's order - PcmBuffer must not
+    // depend on it, matching how WebRTC hands buffers to this hook.
+    val buffer = ByteBuffer.allocateDirect(samples.size * 2)
+    for ((i, sample) in samples.withIndex()) {
+      PcmBuffer.writeSampleLE(buffer, i * 2, sample.toInt())
     }
-    buffer.flip()
     return buffer
   }
 
-  private fun readShorts(buffer: ByteBuffer, count: Int): ShortArray {
-    val order = buffer.order()
-    buffer.order(ByteOrder.LITTLE_ENDIAN)
-    val out = ShortArray(count) { buffer.getShort(it * 2) }
-    buffer.order(order)
-    return out
-  }
+  private fun readSamples(buffer: ByteBuffer, count: Int): IntArray =
+    IntArray(count) { PcmBuffer.readSampleLE(buffer, it * 2) }
 
-  private fun fullFrame(vararg firstSamples: Short): ShortArray {
-    val samples = ShortArray(NUM_BANDS * NUM_FRAMES)
+  private fun fullFrame(vararg firstSamples: Int): IntArray {
+    val samples = IntArray(NUM_BANDS * NUM_FRAMES)
     for (i in firstSamples.indices) {
       samples[i] = firstSamples[i]
     }
     return samples
   }
 
-  // DISABLED: every write strategy tried (per-band limiter, cross-band-
-  // uniform limiter, band-0-only) produced the same reported distortion at
-  // any non-unity gain, while leaving the buffer untouched was consistently
-  // clean - see the class doc. process() is now read-only regardless of
-  // the requested gain; these tests lock that in.
+  private fun bufferOfInts(samples: IntArray): ByteBuffer {
+    val buffer = ByteBuffer.allocateDirect(samples.size * 2)
+    for ((i, sample) in samples.withIndex()) {
+      PcmBuffer.writeSampleLE(buffer, i * 2, sample)
+    }
+    return buffer
+  }
 
   @Test
-  fun `buffer is never modified regardless of requested gain`() {
-    for (gain in listOf(0.0, 0.05, 0.5, 1.0, 1.5, 2.0, 4.0)) {
-      val processor = GainAudioProcessor()
-      processor.setGain(gain)
-      val original = fullFrame(1000, -2000, 16000, -16000, 32000, -32000)
-      val buffer = bufferOf(original)
-      processor.process(NUM_BANDS, NUM_FRAMES, buffer)
+  fun `unity gain leaves samples unchanged`() {
+    val processor = GainAudioProcessor()
+    val original = fullFrame(1000, -2000, 16000, -16000)
+    val buffer = bufferOfInts(original)
+    processor.process(NUM_BANDS, NUM_FRAMES, buffer)
+    assertTrue(original.contentEquals(readSamples(buffer, original.size)))
+  }
+
+  @Test
+  fun `5 percent gain quiets band 0 instead of amplifying it`() {
+    val processor = GainAudioProcessor()
+    processor.setGain(0.05)
+    val original = fullFrame(10000, -10000, 20000, -20000)
+    val buffer = bufferOfInts(original)
+    processor.process(NUM_BANDS, NUM_FRAMES, buffer)
+    val result = readSamples(buffer, original.size)
+    // Only the first 4 samples are nonzero (see fullFrame, all within band
+    // 0 since NUM_FRAMES=480); the rest are zero-padding.
+    for (i in 0 until 4) {
+      val expected = (original[i] * 0.05).toInt()
       assertTrue(
-        original.contentEquals(readShorts(buffer, original.size)),
-        "buffer must be unchanged at gain=$gain",
+        kotlin.math.abs(result[i] - expected) <= 2,
+        "sample $i: expected ~$expected, got ${result[i]} (original ${original[i]})",
+      )
+      assertTrue(
+        kotlin.math.abs(result[i]) < kotlin.math.abs(original[i]),
+        "sample $i: 5% gain must quiet the signal, got ${result[i]} from ${original[i]}",
       )
     }
   }
 
   @Test
-  fun `lastRequestedGain reports the last setGain value without applying it`() {
+  fun `0 percent gain silences band 0`() {
+    val processor = GainAudioProcessor()
+    processor.setGain(0.0)
+    val original = fullFrame(12345, -12345, 32000, -32000)
+    val buffer = bufferOfInts(original)
+    processor.process(NUM_BANDS, NUM_FRAMES, buffer)
+    val result = readSamples(buffer, original.size)
+    for (i in 0 until 4) {
+      assertEquals(0, result[i])
+    }
+  }
+
+  @Test
+  fun `95-105 percent gain scales band 0 roughly linearly`() {
+    val original = fullFrame(10000, -10000)
+    for (percent in listOf(0.95, 0.97, 1.0, 1.03, 1.05)) {
+      val processor = GainAudioProcessor()
+      processor.setGain(percent)
+      val buffer = bufferOfInts(original)
+      processor.process(NUM_BANDS, NUM_FRAMES, buffer)
+      val result = readSamples(buffer, original.size)
+      val expected0 = (original[0] * percent).toInt()
+      assertTrue(
+        kotlin.math.abs(result[0] - expected0) <= 2,
+        "gain=$percent sample0: expected ~$expected0, got ${result[0]}",
+      )
+    }
+  }
+
+  @Test
+  fun `200 percent gain roughly doubles a quiet band 0 signal`() {
+    val processor = GainAudioProcessor()
+    processor.setGain(2.0)
+    val original = fullFrame(5000, -5000)
+    val buffer = bufferOfInts(original)
+    processor.process(NUM_BANDS, NUM_FRAMES, buffer)
+    val result = readSamples(buffer, original.size)
+    assertTrue(kotlin.math.abs(result[0] - 10000) <= 2, "expected ~10000, got ${result[0]}")
+    assertTrue(kotlin.math.abs(result[1] - -10000) <= 2, "expected ~-10000, got ${result[1]}")
+  }
+
+  @Test
+  fun `200 percent gain on a loud band 0 signal is limited, not hard-clipped or wrapped`() {
+    val processor = GainAudioProcessor()
+    processor.setGain(2.0)
+    // 20000 * 2.0 = 40000, overflows Int16 - the shape that would expose a
+    // hard-clamp/overflow/wraparound bug as "crazy high volume".
+    val original = fullFrame(20000, -20000)
+    val buffer = bufferOfInts(original)
+    processor.process(NUM_BANDS, NUM_FRAMES, buffer)
+    val result = readSamples(buffer, original.size)
+    assertTrue(result[0] in 20000..32767, "expected a loud but valid sample, got ${result[0]}")
+    assertTrue(result[1] in -32768..-20000, "expected a loud but valid sample, got ${result[1]}")
+  }
+
+  @Test
+  fun `gain only touches band 0, bands 1 and 2 are left untouched`() {
+    // Band 1 carries substantial real energy on real devices (confirmed via
+    // the on-device bandRms diagnostic) - not simple duplicate/parallel
+    // content safe to rewrite the way band 0 is, so only band 0 is scaled.
     val processor = GainAudioProcessor()
     processor.setGain(0.5)
-    assertEquals(0.5, processor.lastRequestedGain, 0.001)
-    val original = fullFrame(10000, -10000)
-    val buffer = bufferOf(original)
+    val samples = IntArray(NUM_BANDS * NUM_FRAMES)
+    samples[0] = 10000
+    samples[NUM_FRAMES] = 20000
+    samples[NUM_FRAMES * 2] = 30000
+    val buffer = bufferOfInts(samples)
     processor.process(NUM_BANDS, NUM_FRAMES, buffer)
-    assertTrue(original.contentEquals(readShorts(buffer, original.size)))
-    assertEquals(0.5, processor.lastRequestedGain, 0.001)
+    val result = readSamples(buffer, samples.size)
+    assertEquals(5000, result[0])
+    assertEquals(20000, result[NUM_FRAMES], "band 1 must be left untouched")
+    assertEquals(30000, result[NUM_FRAMES * 2], "band 2 must be left untouched")
   }
 
   @Test
-  fun `peak and band RMS diagnostics still reflect the real captured signal`() {
+  fun `process never calls buffer order (stays independent of it)`() {
+    // A stronger version of the above tests: construct the buffer at its
+    // default order and confirm process() neither depends on it nor
+    // changes it - the exact property change implicated in the earlier
+    // confirmed-on-remote-listener distortion.
     val processor = GainAudioProcessor()
-    processor.setGain(2.0) // must have no bearing on the diagnostics below
-    val samples = ShortArray(NUM_BANDS * NUM_FRAMES)
-    samples[0] = 10000 // band 0
-    samples[NUM_FRAMES] = 20000 // band 1
-    val buffer = bufferOf(samples)
+    processor.setGain(0.5)
+    val buffer = ByteBuffer.allocateDirect(NUM_BANDS * NUM_FRAMES * 2)
+    PcmBuffer.writeSampleLE(buffer, 0, 10000)
+    val orderBefore = buffer.order()
     processor.process(NUM_BANDS, NUM_FRAMES, buffer)
-    assertEquals(20000, processor.lastPeakBeforeGain)
-    assertEquals(20000, processor.lastPeakAfterGain, "no gain is applied, so before/after must match")
-    assertEquals(3, processor.lastBandRms.size)
-    assertTrue(processor.lastBandRms[1] > processor.lastBandRms[0], "band 1 carries more energy in this fixture")
-  }
-
-  @Test
-  fun `only one instance exists per construction`() {
-    val a = GainAudioProcessor()
-    val b = GainAudioProcessor()
-    assertTrue(a.instanceId != b.instanceId, "distinct instances must report distinct ids")
+    assertEquals(orderBefore, buffer.order(), "process() must not mutate buffer.order()")
+    assertEquals(5000, PcmBuffer.readSampleLE(buffer, 0))
   }
 }

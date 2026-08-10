@@ -18,7 +18,6 @@ package io.livekit.plugin
 
 import com.cloudwebrtc.webrtc.audio.AudioProcessingAdapter
 import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
@@ -40,6 +39,13 @@ import java.util.concurrent.atomic.AtomicLong
  * are passed through unmodified, since their exact role in this specific
  * WebRTC build's band-split representation isn't documented anywhere
  * reachable (the WebRTC Android AAR is precompiled, no source available).
+ *
+ * Reads and writes band 0 via [PcmBuffer], never calling
+ * `ByteBuffer.order(...)` - see that class's doc. This class used to call
+ * `buffer.order(LITTLE_ENDIAN)` before `getShort`/`putShort`, the same
+ * pattern every gain-processing variant used, and a remote call listener
+ * confirmed hearing real distortion in the actual transmitted audio while
+ * that call was in place.
  */
 internal class DeepFilterNoiseProcessor : AudioProcessingAdapter.ExternalAudioFrameProcessing {
   private val enabled = AtomicBoolean(false)
@@ -85,21 +91,17 @@ internal class DeepFilterNoiseProcessor : AudioProcessingAdapter.ExternalAudioFr
     if (currentHandle == 0L) {
       return
     }
-    val originalOrder = buffer.order()
-    buffer.order(ByteOrder.LITTLE_ENDIAN)
     val base = buffer.position()
-    if (base + FRAME_SAMPLES * 2 > buffer.limit()) {
-      buffer.order(originalOrder)
+    if (!PcmBuffer.hasSample(buffer, base + (FRAME_SAMPLES - 1) * 2)) {
       return
     }
     for (i in 0 until FRAME_SAMPLES) {
-      scratch[i] = buffer.getShort(base + i * 2)
+      scratch[i] = PcmBuffer.readSampleLE(buffer, base + i * 2).toShort()
     }
     nativeProcess(currentHandle, scratch)
     for (i in 0 until FRAME_SAMPLES) {
-      buffer.putShort(base + i * 2, scratch[i])
+      PcmBuffer.writeSampleLE(buffer, base + i * 2, scratch[i].toInt())
     }
-    buffer.order(originalOrder)
   }
 
   fun destroy() {
