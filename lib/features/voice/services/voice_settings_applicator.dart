@@ -41,6 +41,16 @@ class VoiceSettingsApplicator {
         autoGainControl: processing.autoGainControl,
         processor: noiseFilterSupported ? noiseFilter : null,
       ),
+      // Opus DTX defaults to enabled in this SDK. Its silence-detection
+      // re-engage causes an audible muffled/choppy artifact right after a
+      // period of low signal - exactly what noise suppression produces at
+      // the moment it starts attenuating background noise, since DTX's
+      // heuristic reads that transition as "was silent, now speaking again"
+      // even mid-sentence. fluxer_desktop's native voice engine had this
+      // identical bug (hardcoded dtx: true) and fixed it by disabling DTX
+      // for mic tracks; the browser client works around it at the SDP fmtp
+      // layer (usedtx=0). This SDK exposes the same switch directly.
+      defaultAudioPublishOptions: const AudioPublishOptions(dtx: false),
       defaultCameraCaptureOptions: cameraCaptureOptionsFor(
         resolution: settings.cameraResolution,
         deviceId: settings.videoDeviceId,
