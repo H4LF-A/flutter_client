@@ -142,9 +142,10 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
     val base = buffer.position()
     val totalSamples = numBands * numFrames
 
-    // Pass 1: measure the raw signal (peak, per-band RMS) and, if gain is
-    // non-unity, the peak the gain multiply alone would produce across the
-    // whole frame - every band together, not per-band.
+    // Pass 1: measure the raw signal (peak, per-band RMS) across every band
+    // - diagnostic only, does not affect what gets modified below - and, if
+    // gain is non-unity, the peak the gain multiply alone would produce
+    // within BAND 0 ONLY (see EXPERIMENT note below).
     var peakBefore = 0
     val bandSumSquares = DoubleArray(numBands)
     var globalPeakScaled = 0L
@@ -162,7 +163,15 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
       if (bandIndex < numBands) {
         bandSumSquares[bandIndex] += sample.toDouble() * sample.toDouble()
       }
-      if (gain != UNITY_GAIN_MILLI) {
+      // EXPERIMENT: only band 0 (i < numFrames) is a candidate for gain -
+      // matching the scope DeepFilterNoiseProcessor already safely uses.
+      // Reported audio distortion has survived every other explanation
+      // tried (feedback, AGC, duplicate processing, audio source) and
+      // correlates only with "does this code modify the buffer at all" -
+      // this isolates whether modifying band 1 specifically (as the
+      // previous cross-band-uniform version did) is the actual cause,
+      // since band 1 might not be simple duplicate/parallel audio content.
+      if (gain != UNITY_GAIN_MILLI && i < numFrames) {
         val scaledAbs = kotlin.math.abs(sample.toLong() * gain / UNITY_GAIN_MILLI)
         if (scaledAbs > globalPeakScaled) {
           globalPeakScaled = scaledAbs
@@ -180,11 +189,9 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
       return
     }
 
-    // A single scalar for the whole frame: linear gain, then (if needed) a
-    // uniform additional scale-down so the loudest sample anywhere in the
-    // frame lands within the soft-limited target - applied identically to
-    // every sample in every band, never compressing one band more than
-    // another.
+    // A single scalar computed from band 0's own loudest sample, applied
+    // only within band 0 (see EXPERIMENT note above) - bands 1+ are left
+    // completely untouched this build.
     val targetPeak = softLimitTarget(globalPeakScaled)
     val limiterScaleMilli = if (globalPeakScaled > 0) {
       ((targetPeak.toDouble() / globalPeakScaled.toDouble()) * UNITY_GAIN_MILLI).toLong()
@@ -193,7 +200,8 @@ internal class GainAudioProcessor : AudioProcessingAdapter.ExternalAudioFramePro
     }
 
     var peakAfter = 0
-    for (i in 0 until totalSamples) {
+    val band0Samples = numFrames.coerceAtMost(totalSamples)
+    for (i in 0 until band0Samples) {
       val index = base + i * 2
       if (index + 2 > buffer.limit()) {
         break
